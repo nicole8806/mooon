@@ -98,11 +98,12 @@ bool CMySQLConnection::is_duplicate_exception(int errcode) const
 
 bool CMySQLConnection::is_disconnected_exception(CDBException& db_error) const
 {
-    int errcode = db_error.errcode();
+    const int errcode = db_error.errcode();
 
     // ER_QUERY_INTERRUPTED：比如mysqld进程挂了
     // CR_SERVER_GONE_ERROR：比如客户端将连接close了
     // CR_SERVER_LOST: 比如强制kill了MySQL连接
+    // ER_SERVER_SHUTDOWN(1053) Server shutdown in progress 当执行关闭MySQL时
     return (ER_QUERY_INTERRUPTED == errcode) ||  // Query execution was interrupted
            (CR_CONN_HOST_ERROR == errcode) ||    // Can't connect to MySQL server
            (CR_SERVER_GONE_ERROR == errcode) ||  // MySQL server has gone away
@@ -110,6 +111,18 @@ bool CMySQLConnection::is_disconnected_exception(CDBException& db_error) const
            (CR_CONNECTION_ERROR == errcode) ||   // Can't connect to local MySQL server through socket '%s' (%d)
            (CR_IPSOCK_ERROR == errcode) ||       // Can't create TCP/IP socket (%d)
            (CR_SERVER_HANDSHAKE_ERR == errcode); // Error in server handshake
+}
+
+bool CMySQLConnection::is_deadlock_exception(CDBException& db_error) const
+{
+    const int errcode = db_error.errcode();
+    return ER_LOCK_DEADLOCK == errcode;
+}
+
+bool CMySQLConnection::is_shutdowning_exception(CDBException& db_error) const
+{
+    const int errcode = db_error.errcode();
+    return ER_SERVER_SHUTDOWN == errcode;
 }
 
 std::string CMySQLConnection::escape_string(const std::string& str) const

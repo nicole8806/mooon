@@ -101,8 +101,25 @@ public:
      * 转换后的minute为YYYYMMDDhhmm格式，
      * 转换后的second为YYYYMMDDhhmmss格式
      */
-    static void decompose(struct tm* tm, int* year=NULL, int* month=NULL, int* day=NULL, int64_t* hour=NULL, int64_t* minute=NULL, int64_t* second=NULL);
-    static void decompose(struct tm* tm, std::string* year=NULL, std::string* month=NULL, std::string* day=NULL, std::string* hour=NULL, std::string* minute=NULL, std::string* second=NULL);
+    static void decompose(const struct tm* tm, int* year=NULL, int* month=NULL, int* day=NULL, int64_t* hour=NULL, int64_t* minute=NULL, int64_t* second=NULL);
+    static void decompose(const struct tm* tm, std::string* year=NULL, std::string* month=NULL, std::string* day=NULL, std::string* hour=NULL, std::string* minute=NULL, std::string* second=NULL);
+    static void decompose(const struct tm& tm, int* year=NULL, int* month=NULL, int* day=NULL, int64_t* hour=NULL, int64_t* minute=NULL, int64_t* second=NULL);
+    static void decompose(const struct tm& tm, std::string* year=NULL, std::string* month=NULL, std::string* day=NULL, std::string* hour=NULL, std::string* minute=NULL, std::string* second=NULL);
+    static void decompose(time_t t, int* year=NULL, int* month=NULL, int* day=NULL, int64_t* hour=NULL, int64_t* minute=NULL, int64_t* second=NULL);
+    static void decompose(time_t t, std::string* year=NULL, std::string* month=NULL, std::string* day=NULL, std::string* hour=NULL, std::string* minute=NULL, std::string* second=NULL);
+
+    /* 转成格式为“YYYY-01-01 00:00:00”格式的值，如果指定了前缀prefix，如PREFIX为y，则输出格式为“yYYYY-01-01 00:00:00” */
+    static std::string to_str_long_year(const struct tm& t, const char* prefix=NULL);
+    /* 转成格式为“YYYY-MM-01 00:00:00”格式的值 */
+    static std::string to_str_long_month(const struct tm& t, const char* prefix=NULL);
+    /* 转成格式为“YYYY-MM-DD 00:00:00”格式的值 */
+    static std::string to_str_long_day(const struct tm& t, const char* prefix=NULL);
+    /* 转成格式为“YYYY-MM-DD hh:00:00”格式的值 */
+    static std::string to_str_long_hour(const struct tm& t, const char* prefix=NULL);
+    /* 转成格式为“YYYY-MM-DD hh:mm:00”格式的值 */
+    static std::string to_str_long_minute(const struct tm& t, const char* prefix=NULL);
+    /* 转成格式为“YYYY-MM-DD hh:mm:ss”格式的值 */
+    static std::string to_str_long_second(const struct tm& t, const char* prefix=NULL);
 
     /** 日期和时间 */
     static void to_current_datetime(struct tm* current_datetime_struct, char* datetime_buffer, size_t datetime_buffer_size, const char* format="%04d-%02d-%02d %02d:%02d:%02d");
@@ -144,10 +161,11 @@ public:
       * 将一个字符串转换成日期时间格式
       * @str: 符合“YYYY-MM-DD HH:MM:SS”格式的日期时间
       * @datetime_struct: 存储转换后的日期时间
+      * @isdst: 值大于0时表示为夏令时，值为0表示非夏令时，值为负数表示未知，注意大于0的值严重影响性能
       * @return: 转换成功返回true，否则返回false
       */
-    static bool datetime_struct_from_string(const char* str, struct tm* datetime_struct);
-    static bool datetime_struct_from_string(const char* str, time_t* datetime);
+    static bool datetime_struct_from_string(const char* str, struct tm* datetime_struct, int isdst=0);
+    static bool datetime_struct_from_string(const char* str, time_t* datetime, int isdst=0);
 
     // 返回“YYYY-MM-DD HH:MM:SS”格式的日期时间
     static std::string to_string(time_t datetime, const char* format="%04d-%02d-%02d %02d:%02d:%02d");

@@ -29,6 +29,8 @@ bool CDatetimeUtils::is_same_day(time_t t1, time_t t2)
     struct tm result1;
     struct tm result2;
 
+    result1.tm_isdst = 0;
+    result2.tm_isdst = 0;
     localtime_r(&t1, &result1);
     localtime_r(&t2, &result2);
 
@@ -45,6 +47,7 @@ bool CDatetimeUtils::is_leap_year(int year)
 uint32_t CDatetimeUtils::time2date(time_t t)
 {
     struct tm result;
+    result.tm_isdst = 0;
     localtime_r(&t, &result);
 
     // 20160114
@@ -148,6 +151,7 @@ void CDatetimeUtils::get_current_datetime(char* datetime_buffer, size_t datetime
     struct tm result;
     time_t now = time(NULL);
 
+    result.tm_isdst = 0;
     localtime_r(&now, &result);
     snprintf(datetime_buffer, datetime_buffer_size
         ,format
@@ -167,6 +171,7 @@ void CDatetimeUtils::get_current_date(char* date_buffer, size_t date_buffer_size
     struct tm result;
     time_t now = time(NULL);
 
+    result.tm_isdst = 0;
     localtime_r(&now, &result);
     snprintf(date_buffer, date_buffer_size
         ,format
@@ -185,6 +190,7 @@ void CDatetimeUtils::get_current_time(char* time_buffer, size_t time_buffer_size
     struct tm result;
     time_t now = time(NULL);
 
+    result.tm_isdst = 0;
     localtime_r(&now, &result);
     snprintf(time_buffer, time_buffer_size
         ,format
@@ -201,10 +207,11 @@ std::string CDatetimeUtils::get_current_time(const char* format)
 void CDatetimeUtils::get_current_datetime_struct(struct tm* current_datetime_struct)
 {
     time_t now = time(NULL);
+    current_datetime_struct->tm_isdst = 0;
     localtime_r(&now, current_datetime_struct);
 }
 
-void CDatetimeUtils::decompose(struct tm* tm, int* year, int* month, int* day, int64_t* hour, int64_t* minute, int64_t* second)
+void CDatetimeUtils::decompose(const struct tm* tm, int* year, int* month, int* day, int64_t* hour, int64_t* minute, int64_t* second)
 {
     if (year != NULL)
     {
@@ -232,12 +239,12 @@ void CDatetimeUtils::decompose(struct tm* tm, int* year, int* month, int* day, i
     }
 }
 
-void CDatetimeUtils::decompose(struct tm* tm, std::string* year, std::string* month, std::string* day, std::string* hour, std::string* minute, std::string* second)
+void CDatetimeUtils::decompose(const struct tm* tm, std::string* year, std::string* month, std::string* day, std::string* hour, std::string* minute, std::string* second)
 {
     int Y, M, D; // 年月日
     int64_t h, m, s; // 时分秒
 
-    decompose(tm, &Y, &M, &D, &h, &h, &s);
+    decompose(tm, &Y, &M, &D, &h, &m, &s);
     if (year != NULL)
         *year = utils::CStringUtils::int_tostring(Y);
     if (month != NULL)
@@ -250,6 +257,78 @@ void CDatetimeUtils::decompose(struct tm* tm, std::string* year, std::string* mo
         *minute = utils::CStringUtils::int_tostring(m);
     if (second != NULL)
         *second = utils::CStringUtils::int_tostring(s);
+}
+
+void CDatetimeUtils::decompose(const struct tm& tm, int* year, int* month, int* day, int64_t* hour, int64_t* minute, int64_t* second)
+{
+    decompose(&tm, year, month, day, hour, minute, second);
+}
+
+void CDatetimeUtils::decompose(const struct tm& tm, std::string* year, std::string* month, std::string* day, std::string* hour, std::string* minute, std::string* second)
+{
+    decompose(&tm, year, month, day, hour, minute, second);
+}
+
+void CDatetimeUtils::decompose(time_t t, int* year, int* month, int* day, int64_t* hour, int64_t* minute, int64_t* second)
+{
+    struct tm tm;
+    localtime_r(&t, &tm);
+    decompose(&tm, year, month, day, hour, minute, second);
+}
+
+void CDatetimeUtils::decompose(time_t t, std::string* year, std::string* month, std::string* day, std::string* hour, std::string* minute, std::string* second)
+{
+    struct tm tm;
+    localtime_r(&t, &tm);
+    decompose(&tm, year, month, day, hour, minute, second);
+}
+
+std::string CDatetimeUtils::to_str_long_year(const struct tm& t, const char* prefix)
+{
+    if (NULL == prefix)
+        return utils::CStringUtils::format_string("%04d-01-01 00:00:00", t.tm_year+1900);
+    else
+        return utils::CStringUtils::format_string("%s%04d-01-01 00:00:00", prefix, t.tm_year+1900);
+}
+
+std::string CDatetimeUtils::to_str_long_month(const struct tm& t, const char* prefix)
+{
+    if (NULL == prefix)
+        return utils::CStringUtils::format_string("%04d-%02d-01 00:00:00", t.tm_year+1900, t.tm_mon+1);
+    else
+        return utils::CStringUtils::format_string("%s%04d-%02d-01 00:00:00", prefix, t.tm_year+1900, t.tm_mon+1);
+}
+
+std::string CDatetimeUtils::to_str_long_day(const struct tm& t, const char* prefix)
+{
+    if (NULL == prefix)
+        return utils::CStringUtils::format_string("%04d-%02d-%02d 00:00:00", t.tm_year+1900, t.tm_mon+1, t.tm_mday);
+    else
+        return utils::CStringUtils::format_string("%s%04d-%02d-%02d 00:00:00", prefix, t.tm_year+1900, t.tm_mon+1, t.tm_mday);
+}
+
+std::string CDatetimeUtils::to_str_long_hour(const struct tm& t, const char* prefix)
+{
+    if (NULL == prefix)
+        return utils::CStringUtils::format_string("%04d-%02d-%02d %02d:00:00", t.tm_year+1900, t.tm_mon+1, t.tm_mday, t.tm_hour);
+    else
+        return utils::CStringUtils::format_string("%s%04d-%02d-%02d %02d:00:00", prefix, t.tm_year+1900, t.tm_mon+1, t.tm_mday, t.tm_hour);
+}
+
+std::string CDatetimeUtils::to_str_long_minute(const struct tm& t, const char* prefix)
+{
+    if (NULL == prefix)
+        return utils::CStringUtils::format_string("%04d-%02d-%02d %02d:%02d:00", t.tm_year+1900, t.tm_mon+1, t.tm_mday, t.tm_hour, t.tm_min);
+    else
+        return utils::CStringUtils::format_string("%s%04d-%02d-%02d %02d:%02d:00", prefix, t.tm_year+1900, t.tm_mon+1, t.tm_mday, t.tm_hour, t.tm_min);
+}
+
+std::string CDatetimeUtils::to_str_long_second(const struct tm& t, const char* prefix)
+{
+    if (NULL == prefix)
+        return utils::CStringUtils::format_string("%04d-%02d-%02d %02d:%02d:%02d", t.tm_year+1900, t.tm_mon+1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec);
+    else
+        return utils::CStringUtils::format_string("%s%04d-%02d-%02d %02d:%02d:%02d", prefix, t.tm_year+1900, t.tm_mon+1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec);
 }
 
 void CDatetimeUtils::to_current_datetime(struct tm* current_datetime_struct, char* datetime_buffer, size_t datetime_buffer_size, const char* format)
@@ -367,12 +446,14 @@ std::string CDatetimeUtils::to_current_second(struct tm* current_datetime_struct
     return second_buffer;
 }
 
-bool CDatetimeUtils::datetime_struct_from_string(const char* str, struct tm* datetime_struct)
+bool CDatetimeUtils::datetime_struct_from_string(const char* str, struct tm* datetime_struct, int isdst)
 {
     const char* tmp_str = str;
 
 #ifdef _XOPEN_SOURCE
-    return strptime(tmp_str, "%Y-%m-%d %H:%M:%S", datetime_struct) != NULL;
+    const char* p = strptime(tmp_str, "%Y-%m-%d %H:%M:%S", datetime_struct);
+    datetime_struct->tm_isdst = isdst;
+    return p != NULL;
 #else
     size_t str_len = strlen(tmp_str);
     if (str_len != sizeof("YYYY-MM-DD HH:MM:SS")-1) return false;
@@ -413,7 +494,7 @@ bool CDatetimeUtils::datetime_struct_from_string(const char* str, struct tm* dat
     if (!CStringUtils::string2int32(tmp_str, datetime_struct->tm_sec, sizeof("SS")-1, true)) return false;
     if ((datetime_struct->tm_sec > 60) || (datetime_struct->tm_sec < 0)) return false;
 
-    datetime_struct->tm_isdst = 0;
+    datetime_struct->tm_isdst = isdst;
     datetime_struct->tm_wday  = 0;
     datetime_struct->tm_yday  = 0;
 
@@ -479,10 +560,10 @@ bool CDatetimeUtils::datetime_struct_from_string(const char* str, struct tm* dat
 #endif // _XOPEN_SOURCE
 }
 
-bool CDatetimeUtils::datetime_struct_from_string(const char* str, time_t* datetime)
+bool CDatetimeUtils::datetime_struct_from_string(const char* str, time_t* datetime, int isdst)
 {
     struct tm datetime_struct;
-    if (!datetime_struct_from_string(str, &datetime_struct)) return false;
+    if (!datetime_struct_from_string(str, &datetime_struct, isdst)) return false;
 
     *datetime = mktime(&datetime_struct);
     return true;
@@ -491,6 +572,7 @@ bool CDatetimeUtils::datetime_struct_from_string(const char* str, time_t* dateti
 std::string CDatetimeUtils::to_string(time_t datetime, const char* format)
 {
     struct tm result;
+    result.tm_isdst = 0;
     localtime_r(&datetime, &result);
 
     char datetime_buffer[sizeof("YYYY-MM-DD HH:SS:MM")+100];
@@ -510,6 +592,7 @@ std::string CDatetimeUtils::to_datetime(time_t datetime, const char* format)
 std::string CDatetimeUtils::to_date(time_t datetime, const char* format)
 {
     struct tm result;
+    result.tm_isdst = 0;
     localtime_r(&datetime, &result);
 
     char date_buffer[sizeof("YYYY-MM-DD")+100];
@@ -523,6 +606,7 @@ std::string CDatetimeUtils::to_date(time_t datetime, const char* format)
 std::string CDatetimeUtils::to_time(time_t datetime, const char* format)
 {
     struct tm result;
+    result.tm_isdst = 0;
     localtime_r(&datetime, &result);
 
     char time_buffer[sizeof("HH:SS:MM")+100];
@@ -565,6 +649,7 @@ void get_formatted_current_datetime(char* datetime_buffer, size_t datetime_buffe
     time_t current_seconds = current.tv_sec;
 
     struct tm result;
+    result.tm_isdst = 0;
     localtime_r(&current_seconds, &result);
 
     if (with_milliseconds)
