@@ -108,6 +108,18 @@ public:
     static void decompose(time_t t, int* year=NULL, int* month=NULL, int* day=NULL, int64_t* hour=NULL, int64_t* minute=NULL, int64_t* second=NULL);
     static void decompose(time_t t, std::string* year=NULL, std::string* month=NULL, std::string* day=NULL, std::string* hour=NULL, std::string* minute=NULL, std::string* second=NULL);
 
+    // 要求t为YYYY-MM-DD hh:mm:ss格式，不做错误检查，如果长度不够或超出，则什么也不做。
+    static void decompose_datetime(const std::string& t, std::string* year=NULL, std::string* month=NULL, std::string* day=NULL, std::string* hour=NULL, std::string* minute=NULL, std::string* second=NULL);
+    static void decompose_datetime(const char* t, std::string* year=NULL, std::string* month=NULL, std::string* day=NULL, std::string* hour=NULL, std::string* minute=NULL, std::string* second=NULL);
+
+    // 要求t为YYYY-MM-DD格式，不做错误检查，如果长度不够或超出，则什么也不做。
+    static void decompose_date(const std::string& t, std::string* year=NULL, std::string* month=NULL, std::string* day=NULL);
+    static void decompose_date(const char* t, std::string* year=NULL, std::string* month=NULL, std::string* day=NULL);
+
+    // 要求t为hh:mm:ss格式，不做错误检查，如果长度不够或超出，则什么也不做。
+    static void decompose_time(const std::string& t, std::string* hour=NULL, std::string* minute=NULL, std::string* second=NULL);
+    static void decompose_time(const char* t, std::string* hour=NULL, std::string* minute=NULL, std::string* second=NULL);
+
     /* 转成格式为“YYYY-01-01 00:00:00”格式的值，如果指定了前缀prefix，如PREFIX为y，则输出格式为“yYYYY-01-01 00:00:00” */
     static std::string to_str_long_year(const struct tm& t, const char* prefix=NULL);
     /* 转成格式为“YYYY-MM-01 00:00:00”格式的值 */
@@ -182,6 +194,12 @@ public:
     // 得到当前的微秒值
     static int64_t get_current_microseconds();
 };
+
+// 返回从1970-01-01 00:00:00以来的秒，返回值和time(NULL)的返回值相等
+extern uint64_t current_seconds();
+
+// 返回从1970-01-01 00:00:00以来的毫秒
+extern uint64_t current_milliseconds();
 
 // 返回今天
 extern std::string today(const char* format="%04d-%02d-%02d");

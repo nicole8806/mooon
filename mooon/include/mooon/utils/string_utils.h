@@ -21,18 +21,32 @@
 #include "mooon/utils/config.h"
 #include <math.h>
 #include <sstream>
+#include <vector>
 UTILS_NAMESPACE_BEGIN
 
 class CStringUtils
 {
 public:
+    // 反转字符串
+    // 输入空则啥也不做，输入单个字符则啥也不做，
+    // 输入12则变成21，输入123则变成321，输入1234则变成4321，依次类推。。。
+    // str 即是输入参数，也是输出参数，作为输入参数时存储被反转的字符串，作为输出参数存储反转后的字符串
+    // 返回值指向反转后的字符串
+    static std::string& reverse_string(std::string* str);
+
+    // 反转字符串
+    // str 被反转的字符串
+    // 返回值为反转后的字符串
+    static std::string reverse_string(const std::string& str);
+
     /** 删除字符串尾部从指定字符开始的内容
       * @source: 需要处理的字符串
       * @c: 分隔字符
       * @example:  如果str为“/usr/local/test/bin/”，而c为“/”，
       *            则处理后str变成“/usr/local/test/bin”
       */
-    static void remove_last(std::string& source, char c);
+    static std::string& remove_last(std::string& source, char c);
+    static std::string remove_last(const std::string& source, char c);
 
     /** 删除字符串尾部从指定字符串开始的内容
       * @source: 需要处理的字符串
@@ -40,30 +54,36 @@ public:
       * @example: 如果str为“/usr/local/test/bin/tt”，而sep为“/bin/”，
       *           则处理后str变成“/usr/local/test
       */
-    static void remove_last(std::string& source, const std::string& sep);
+    static std::string& remove_last(std::string& source, const std::string& sep);
+    static std::string remove_last(const std::string& source, const std::string& sep);
 
     /** 将字符串中的所有小写字符转换成大写 */
-    static void to_upper(char* source);
-    static void to_upper(std::string& source);
+    static char* to_upper(char* source);
+    static std::string& to_upper(std::string& source);
+    static std::string to_upper(const std::string& source);
 
     /** 将字符串中的所有大写字符转换成小写 */
-    static void to_lower(char* source);    
-    static void to_lower(std::string& source);
+    static char* to_lower(char* source);
+    static std::string& to_lower(std::string& source);
+    static std::string to_lower(const std::string& source);
 
     /** 判断指定字符是否为空格或TAB符(\t)或回车符(\r)或换行符(\n) */
     static bool is_space(char c);
     
     /** 删除字符串首尾空格或TAB符(\t)或回车符(\r)或换行符(\n) */
     static void trim(char* source);
-    static void trim(std::string& source);
+    static std::string& trim(std::string& source);
+    static std::string trim(const std::string& source);
 
     /** 删除字符串首部空格或TAB符(\t)或回车符(\r)或换行符(\n) */
     static void trim_left(char* source);
-    static void trim_left(std::string& source);
+    static std::string& trim_left(std::string& source);
+    static std::string trim_left(const std::string& source);
 
     /** 删除字符串尾部空格或TAB符(\t)或回车符(\r)或换行符(\n) */
     static void trim_right(char* source);        
-    static void trim_right(std::string& source);
+    static std::string& trim_right(std::string& source);
+    static std::string trim_right(const std::string& source);
 
     /**
      * 字符串转双精度浮点类型
@@ -271,7 +291,7 @@ public:
       */
     static int chr_index(const char* str, char c);
     static int chr_rindex(const char* str, char c);
-    
+
     /***
       * 从文件路径中提取目录路径
       * @return 返回提取到的目录路径
@@ -312,8 +332,8 @@ public:
       */
     static std::string format_string(const char* format, ...) __attribute__((format(printf, 1, 2)));
 
-    // 判断一个字符串是否为纯数字型字符串
-    static bool is_numeric_string(const char* str);
+    // 判断一个字符串是否为纯数字型字符串，包括小数（小数点不能是第一个字符）
+    static bool is_numeric_string(const char* str, bool enable_float=true);
 
     // 判断一个字符串是否为纯字母型字符串，而不包含数字、下划线等非字母
     static bool is_alphabetic_string(const char* str);
@@ -359,6 +379,31 @@ public:
 
     static std::string char2hex(unsigned char c);
     static unsigned char hex2char(const std::string& hex);
+
+    // 扫描源字符串src，进行替换
+    // 返回值指向dest的字符串，dest替换后的完整字符串
+    // 注意src和dst不能为同一对象
+    //
+    // 假如src为azb，rules是<a,12>、<b,345>，则dest值为12z345
+    //
+    // 使用示例：
+    // int main()
+    // {
+    //     std::string str, dest;
+    //     std::vector<std::pair<char, std::string> > rules(2);
+    //     rules[0] = std::make_pair('<', "&lt;");
+    //     rules[1] = std::make_pair('>', "&gt;");
+    //
+    //     str = "<12>";
+    //     printf("%s\n", replace_string(str, &dest, rules).c_str());
+    //
+    //     return 0;
+    // }
+    //
+    // 运行输出：
+    // &lt;12&gt;
+    static const std::string& replace_string(const char* src, std::string* dest, const std::vector<std::pair<char, std::string> >& rules);
+    static const std::string& replace_string(const std::string& src, std::string* dest, const std::vector<std::pair<char, std::string> >& rules);
 };
 
 UTILS_NAMESPACE_END

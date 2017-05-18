@@ -99,14 +99,45 @@ static bool fast_string2int(const char* str, IntType& result, uint8_t max_length
     return true;
 }
 
-void CStringUtils::remove_last(std::string& source, char c)
+std::string& CStringUtils::reverse_string(std::string* str)
+{
+    std::string& str_ref = *str;
+
+    for (std::string::size_type i=0; i<str_ref.size()/2; ++i)
+    {
+        const std::string::size_type left = i;
+        const std::string::size_type right = str_ref.size() - i - 1;
+        const char lelf_c = str_ref[left];
+        const char right_c = str_ref[right];
+        str_ref[left] = right_c;
+        str_ref[right] = lelf_c;
+    }
+
+    return str_ref;
+}
+
+std::string CStringUtils::reverse_string(const std::string& str)
+{
+    std::string reversed_str = str;
+    reverse_string(&reversed_str);
+    return reversed_str;
+}
+
+std::string& CStringUtils::remove_last(std::string& source, char c)
 {
     std::string::size_type pos = source.rfind(c);
     if (pos+1 != source.length())
         source.erase(pos);
+    return source;
 }
 
-void CStringUtils::remove_last(std::string& source, const std::string& sep)
+std::string CStringUtils::remove_last(const std::string& source, char c)
+{
+    std::string str = source;
+    return remove_last(str, c);
+}
+
+std::string& CStringUtils::remove_last(std::string& source, const std::string& sep)
 {
     // std: $HOME/bin/exe
     // sep: /bin/
@@ -114,9 +145,16 @@ void CStringUtils::remove_last(std::string& source, const std::string& sep)
     std::string::size_type pos = source.rfind(sep);
     if (pos != std::string::npos)
         source.erase(pos);
+    return source;
 }
 
-void CStringUtils::to_upper(char* source)
+std::string CStringUtils::remove_last(const std::string& source, const std::string& sep)
+{
+    std::string str = source;
+    return remove_last(str, sep);
+}
+
+char* CStringUtils::to_upper(char* source)
 {
     char* tmp_source = source;
     while (*tmp_source != '\0')
@@ -126,9 +164,11 @@ void CStringUtils::to_upper(char* source)
 
         ++tmp_source;
     }
+
+    return source;
 }
 
-void CStringUtils::to_lower(char* source)
+char* CStringUtils::to_lower(char* source)
 {
     char* tmp_source = source;
     while (*tmp_source != '\0')
@@ -138,20 +178,36 @@ void CStringUtils::to_lower(char* source)
 
         ++tmp_source;
     }
+
+    return source;
 }
 
-void CStringUtils::to_upper(std::string& source)
+std::string& CStringUtils::to_upper(std::string& source)
 {
     // 只修改大小写，可以这样做
     char* tmp_source = (char *)source.c_str();
     to_upper(tmp_source);
+    return source;
 }
 
-void CStringUtils::to_lower(std::string& source)
+std::string CStringUtils::to_upper(const std::string& source)
+{
+    std::string str = source;
+    return to_upper(str);
+}
+
+std::string& CStringUtils::to_lower(std::string& source)
 {
     // 只修改大小写，可以这样做
     char* tmp_source = (char *)source.c_str();
     to_lower(tmp_source);
+    return source;
+}
+
+std::string CStringUtils::to_lower(const std::string& source)
+{
+    std::string str = source;
+    return to_lower(str);
 }
 
 /** 判断指定字符是否为空格或TAB符(\t)或回车符(\r)或换行符(\n) */
@@ -233,13 +289,22 @@ void CStringUtils::trim_right(char* source)
     }
 }
 
-void CStringUtils::trim(std::string& source)
+std::string& CStringUtils::trim(std::string& source)
 {
     trim_left(source);
     trim_right(source);
+    return source;
 }
 
-void CStringUtils::trim_left(std::string& source)
+std::string CStringUtils::trim(const std::string& source)
+{
+    std::string str = source;
+    trim_left(str);
+    trim_right(str);
+    return str;
+}
+
+std::string& CStringUtils::trim_left(std::string& source)
 {
     // 不能直接对c_str()进行修改，因为长度发生了变化
     size_t length = source.length();
@@ -251,9 +316,17 @@ void CStringUtils::trim_left(std::string& source)
 
     trim_left(tmp_source);
     source = tmp_source;
+    return source;
 }
 
-void CStringUtils::trim_right(std::string& source)
+std::string CStringUtils::trim_left(const std::string& source)
+{
+    std::string str = source;
+    trim_left(str);
+    return str;
+}
+
+std::string& CStringUtils::trim_right(std::string& source)
 {
     // 不能直接对c_str()进行修改，因为长度发生了变化
     size_t length = source.length();
@@ -265,6 +338,14 @@ void CStringUtils::trim_right(std::string& source)
 
     trim_right(tmp_source);
     source = tmp_source;
+    return source;
+}
+
+std::string CStringUtils::trim_right(const std::string& source)
+{
+    std::string str = source;
+    trim_right(str);
+    return str;
 }
 
 bool CStringUtils::string2double(const char* source, double& result)
@@ -730,14 +811,34 @@ std::string CStringUtils::format_string(const char* format, ...)
     return buffer.get();
 }
 
-bool CStringUtils::is_numeric_string(const char* str)
+bool CStringUtils::is_numeric_string(const char* str, bool enable_float)
 {
     const char* p = str;
+    bool found_dot = false;
 
     while (*p != '\0')
     {
         if (!(*p >= '0' && *p <= '9'))
-            return false;
+        {
+            if (*p != '.')
+            {
+                return false;
+            }
+            else if (!enable_float)
+            {
+                // 不允许小数
+                return false;
+            }
+            else // 可能是小数
+            {
+                if (found_dot) // 小数只会有一个点
+                    return false;
+                if (p == str) // 小数点不能为第一个字符，即不允许：“.2017”这样的小数
+                    return false;
+
+                found_dot = true;
+            }
+        }
 
         ++p;
     }
@@ -1066,6 +1167,36 @@ unsigned char CStringUtils::hex2char(const std::string& hex)
     }
 
     return c;
+}
+
+const std::string& CStringUtils::replace_string(const char* src, std::string* dest, const std::vector<std::pair<char, std::string> >& rules)
+{
+    for (int i=0; src[i]!='\0'; ++i)
+    {
+        bool have_replaced = false;
+
+        for (std::vector<std::pair<char, std::string> >::size_type j=0; j<rules.size(); ++j)
+        {
+            if (src[i] == rules[j].first)
+            {
+                dest->append(rules[j].second);
+                have_replaced = true;
+                break;
+            }
+        }
+
+        if (!have_replaced)
+        {
+            dest->push_back(src[i]);
+        }
+    }
+
+    return *dest;
+}
+
+const std::string& CStringUtils::replace_string(const std::string& src, std::string* dest, const std::vector<std::pair<char, std::string> >& rules)
+{
+    return replace_string(src.c_str(), dest, rules);
 }
 
 UTILS_NAMESPACE_END

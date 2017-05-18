@@ -22,6 +22,7 @@
 #include <strings.h>
 #include <sys/time.h>
 #include <utils/string_utils.h>
+#include <utils/tokener.h>
 SYS_NAMESPACE_BEGIN
 
 bool CDatetimeUtils::is_same_day(time_t t1, time_t t2)
@@ -281,6 +282,67 @@ void CDatetimeUtils::decompose(time_t t, std::string* year, std::string* month, 
     struct tm tm;
     localtime_r(&t, &tm);
     decompose(&tm, year, month, day, hour, minute, second);
+}
+
+// 要求t为YYYY-MM-DD hh:mm:ss格式
+void CDatetimeUtils::decompose_datetime(const std::string& t, std::string* year, std::string* month, std::string* day, std::string* hour, std::string* minute, std::string* second)
+{
+    if (t.size() == sizeof("YYYY-MM-DD hh:mm:ss")-1)
+    {
+        if (year != NULL)
+            *year = t.substr(0, 4);
+        if (month != NULL)
+            *month = t.substr(5, 2);
+        if (day != NULL)
+            *day = t.substr(8, 2);
+        if (hour != NULL)
+            *hour = t.substr(11, 2);
+        if (minute != NULL)
+            *minute = t.substr(14, 2);
+        if (second != NULL)
+            *second = t.substr(17, 2);
+    }
+}
+
+void CDatetimeUtils::decompose_datetime(const char* t, std::string* year, std::string* month, std::string* day, std::string* hour, std::string* minute, std::string* second)
+{
+    decompose_datetime(std::string(t), year, month, day, hour, minute, second);
+}
+
+void CDatetimeUtils::decompose_date(const std::string& t, std::string* year, std::string* month, std::string* day)
+{
+    if (t.size() == sizeof("YYYY-MM-DD")-1)
+    {
+        if (year != NULL)
+            *year = t.substr(0, 4);
+        if (month != NULL)
+            *month = t.substr(5, 2);
+        if (day != NULL)
+            *day = t.substr(8, 2);
+    }
+}
+
+void CDatetimeUtils::decompose_date(const char* t, std::string* year, std::string* month, std::string* day)
+{
+    decompose_date(std::string(t), year, month, day);
+}
+
+void CDatetimeUtils::decompose_time(const std::string& t, std::string* hour, std::string* minute, std::string* second)
+{
+    if (t.size() == sizeof("hh:mm:ss")-1)
+    {
+        if (hour != NULL)
+            *hour = t.substr(0, 2);
+        if (minute != NULL)
+            *minute = t.substr(3, 2);
+        if (second != NULL)
+            *second = t.substr(6, 2);
+    }
+}
+
+void CDatetimeUtils::decompose_time(const char* t, std::string* hour, std::string* minute, std::string* second)
+{
+    decompose_time(std::string(t), hour, minute, second);
 }
 
 std::string CDatetimeUtils::to_str_long_year(const struct tm& t, const char* prefix)
@@ -625,6 +687,19 @@ int64_t CDatetimeUtils::get_current_microseconds()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+
+uint64_t current_seconds()
+{
+    return static_cast<uint64_t>(time(NULL));
+}
+
+uint64_t current_milliseconds()
+{
+    struct timeval now;
+    (void)gettimeofday(&now, NULL);
+    return (now.tv_sec*1000) + (now.tv_usec/1000);
+}
+
 std::string today(const char* format)
 {
     return CDatetimeUtils::get_current_date(format);

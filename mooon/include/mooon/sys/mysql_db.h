@@ -38,11 +38,17 @@ public:
     static void library_end();
 
     static bool is_duplicate(int errcode);
+
+    // 双引号转成：\"
+    // 单引号转成：\'
+    // 单斜杠转成双斜杠
+    // 注意不转义空格、|、?、<、>、{、}、:、~、@、!、(、)、`、#、%、,、;、&、-和_等
     static void escape_string(const std::string& str, std::string* escaped_str);
 
 public:
     CMySQLConnection(size_t sql_max=8192);
     ~CMySQLConnection();
+    void* get_mysql_handle() const { return _mysql_handle; }
 
 public:
     virtual bool is_syntax_exception(int errcode) const; // errcode值为1064
@@ -51,13 +57,15 @@ public:
     virtual bool is_deadlock_exception(CDBException& db_error) const;
     virtual bool is_shutdowning_exception(CDBException& db_error) const;
 
-    virtual std::string escape_string(const std::string& str) const;
+    virtual std::string escape_string(const std::string& str) const throw (CDBException);
+    virtual void change_charset(const std::string& charset) throw (CDBException);
     virtual void open() throw (CDBException);
     virtual void close() throw ();
     virtual void reopen() throw (CDBException);
 
     // 如果update的值并没变化返回0，否则返回变修改的行数
-    virtual int update(const char* format, ...) throw (CDBException) __attribute__((format(printf, 2, 3)));
+    virtual uint64_t update(const char* format, ...) throw (CDBException) __attribute__((format(printf, 2, 3)));
+    virtual uint64_t get_insert_id() const;
     virtual std::string str() throw ();
 
     virtual void ping() throw (CDBException);
@@ -74,7 +82,7 @@ private:
     void do_open() throw (CDBException);
 
 private:
-    void* _mysql_handler; // MySQL句柄
+    void* _mysql_handle; // MySQL句柄
 };
 
 SYS_NAMESPACE_END
