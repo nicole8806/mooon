@@ -2,43 +2,17 @@
 #ifndef MOOON_DB_PROXY_DB_PROCESS_H
 #define MOOON_DB_PROXY_DB_PROCESS_H
 #include "config_loader.h"
+#include "sql_progress.h"
+#include <mooon/observer/observer_manager.h>
 #include <mooon/sys/mysql_db.h>
+#include <mooon/sys/safe_logger.h>
 #include <mooon/sys/thread_engine.h>
+#include <mooon/utils/scoped_ptr.h>
 #include <zlib.h>
 namespace mooon { namespace db_proxy {
 
-struct Progress
-{
-    uint32_t crc32;
-    uint32_t offset;
-    char filename[sizeof("sql.0123456789AB.123456")]; // 包含结尾符'\0'
-
-    Progress()
-    {
-        crc32 = 0;
-        offset = 0;
-        memset(filename, sizeof(filename), 0);
-    }
-
-    bool empty() const
-    {
-        return '\0' == filename[0];
-    }
-
-    std::string str() const
-    {
-        return utils::CStringUtils::format_string("progress://C%u/O%u/F%s", crc32, offset, filename);
-    }
-
-    uint32_t get_crc32() const
-    {
-        const std::string crc32_str = utils::CStringUtils::format_string("%u%s", offset, filename);
-        return ::crc32(0L, (const unsigned char*)crc32_str.data(), crc32_str.size());
-    }
-};
-
 // 父进程不在时自动退出
-class CDbProcess
+class CDbProcess: public mooon::observer::IObservable
 {
 public:
     CDbProcess(const struct DbInfo& dbinfo);
@@ -55,6 +29,7 @@ public:
     void on_exception(int errcode) throw ();
 
 private:
+    bool is_over(uint32_t offset) const;
     bool parent_process_not_exists() const;
     bool create_history_directory() const;
     void handle_directory();
@@ -69,6 +44,18 @@ private:
     void archive_file(const std::string& filename) const;
 
 private:
+    std::string get_filepath(const std::string& filename) const;
+    std::string get_archived_filepath(const std::string& filename) const;
+    std::string get_history_dirpath() const;
+    void delete_old_history_files(); // 删除过老的历史文件
+
+private: // override mooon::observer::IObservable
+    virtual void on_report(mooon::observer::IDataReporter* data_reporter, const std::string& current_datetime);
+
+private:
+    int _report_frequency_seconds;
+    mooon::utils::ScopedPtr<mooon::sys::CSafeLogger> _data_logger;
+    mooon::utils::ScopedPtr<mooon::observer::CDefaultDataReporter> _data_reporter;
     int _progess_fd; // 进度文件句柄
     struct Progress _progress;
     struct DbInfo _dbinfo;
@@ -77,13 +64,22 @@ private:
     sys::CThreadEngine* _signal_thread;
     sys::CMySQLConnection _mysql;
     uint32_t _consecutive_failures; // 用于减少连接DB失败时的重复日志
-    uint64_t _num_sqls; // 启动以来总共处理过的SQL条数
     bool _db_connected; // 是否连接了DB
+    bool _old_history_files_deleted_today; // 今日是否已执行过删除老的历史文件
 
 private:
     time_t _begin_time; // 效率统计开始时间
     int _interval_count; // 效率统计时间段内发生的数目
     int _batch; // 当前事务已写的条数
+
+private:
+    void reset();
+    uint64_t _success_num_sqls; // 启动以来总共处理过的SQL条数
+    uint64_t _last_success_num_sqls; // 上一次记录的
+    uint64_t _failure_num_sqls;
+    uint64_t _last_failure_num_sqls;
+    uint64_t _retry_times; // 重试次数
+    uint64_t _last_retry_times;
 };
 
 }} // namespace mooon { namespace db_proxy {

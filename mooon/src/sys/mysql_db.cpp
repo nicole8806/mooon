@@ -21,7 +21,7 @@
 #include "utils/string_formatter.h"
 #include "utils/string_utils.h"
 
-#if HAVE_MYSQL==1
+#if MOOON_HAVE_MYSQL==1
 //#include <my_global.h> // 有些版本的MySQL可能需要包含此头文件
 //#include <my_sys.h>    // 有些版本的MySQL可能需要包含此头文件
 #include <mysql/errmsg.h> // CR_SERVER_GONE_ERROR
@@ -147,7 +147,7 @@ std::string CMySQLConnection::escape_string(const std::string& str) const throw 
         // #define MYSQL_VERSION_ID            50712
         // #define LIBMYSQL_VERSION           "5.7.12"  // 有些版本无此定义
         // #define LIBMYSQL_VERSION_ID         50712    // 有些版本无此定义
-        //
+        // （启用NO_BACKSLASH_ESCAPES表示将反斜杠当作普通字符而不是转义字符）
         // As of MySQL 5.7.6, mysql_real_escape_string() fails and produces an CR_INSECURE_API_ERR error if the NO_BACKSLASH_ESCAPES SQL mode is enabled.
 #if MYSQL_VERSION_ID < 50706
             escaped_string_length = mysql_real_escape_string(
@@ -400,4 +400,4 @@ void CMySQLConnection::do_open() throw (CDBException)
 }
 
 SYS_NAMESPACE_END
-#endif // HAVE_MYSQL
+#endif // MOOON_HAVE_MYSQL

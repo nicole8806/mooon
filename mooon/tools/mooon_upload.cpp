@@ -33,14 +33,14 @@
 #include <fstream>
 #include <iostream>
 
-// 逗号分隔的远程主机列表
-STRING_ARG_DEFINE(h, "", "remote hosts separated by comma, e.g., -h='192.168.1.10,192.168.1.11'. You can also set environment `HOSTS` instead of `-h`, e.g., export HOSTS=192.168.1.10,192.168.1.11");
+// 逗号分隔的远程主机IP列表
+STRING_ARG_DEFINE(h, "", "remote hosts separated by comma, e.g., -h='192.168.1.10,192.168.1.11'. You can also set environment `H` instead of `-h`, e.g., export H=192.168.1.10,192.168.1.11");
 // 远程主机的sshd端口号
-INTEGER_ARG_DEFINE(uint16_t, P, 36000, 10, 65535, "remote hosts port, e.g., -P=22");
+INTEGER_ARG_DEFINE(uint16_t, P, 22, 10, 65535, "remote hosts port, e.g., -P=22. You can also set environment `PORT` instead of `-P`, e.g., export PORT=1998");
 // 用户名
-STRING_ARG_DEFINE(u, "root", "remote host user name, e.g., -u=root");
+STRING_ARG_DEFINE(u, "", "remote host user name, e.g., -u=root. You can also set environment `U` instead of `-u`, e.g., export U=zhangsan");
 // 密码
-STRING_ARG_DEFINE(p, "", "remote host password, e.g., -p='password'");
+STRING_ARG_DEFINE(p, "", "remote host password, e.g., -p='password'. You can also set environment `P` instead of `-p`, e.g., export P=123456");
 
 // 被上传的文件路径
 STRING_ARG_DEFINE(s, "", "the local source files uploaded, separated by comma, e.g., -s='/tmp/x1.txt,/tmp/x2.txt'");
@@ -73,16 +73,16 @@ struct ResultInfo
 inline std::ostream& operator <<(std::ostream& out, const struct ResultInfo& result)
 {
     std::string tag = result.success? "SUCCESS": "FAILURE";
-    out << "["PRINT_COLOR_YELLOW << result.ip << PRINT_COLOR_NONE" " << tag << "] " << result.seconds << " seconds (" << result.source << ")";
+    out << "[" PRINT_COLOR_YELLOW << result.ip << PRINT_COLOR_NONE" " << tag << "] " << result.seconds << " seconds (" << result.source << ")";
     return out;
 }
 
-// 可环境变量HOSTS替代参数“-h”
-// 可环境变量USER替代参数“-u”
-// 可环境变量PASSWORD替代参数“-p”
+// 可环境变量H替代参数“-h”
+// 可环境变量U替代参数“-u”
+// 可环境变量P替代参数“-p”
 int main(int argc, char* argv[])
 {
-#if HAVE_LIBSSH2 == 1
+#if MOOON_HAVE_LIBSSH2 == 1
     // 解析命令行参数
     std::string errmsg;
     if (!mooon::utils::parse_arguments(argc, argv, &errmsg))
@@ -102,6 +102,14 @@ int main(int argc, char* argv[])
     mooon::utils::CStringUtils::trim(hosts);
     mooon::utils::CStringUtils::trim(user);
     mooon::utils::CStringUtils::trim(password);
+
+    // 检查参数（-P）
+    const char* port_ = getenv("PORT");
+    if (port_ != NULL)
+    {
+        // 优先使用环境变量的值，但如果不是合法的值，则仍然使用参数值
+        (void)mooon::utils::CStringUtils::string2int(port_, port);
+    }
 
     // 检查参数（-s）
     if (sources.empty())
@@ -123,10 +131,10 @@ int main(int argc, char* argv[])
     if (hosts.empty())
     {
         // 尝试从环境变量取值
-        const char* hosts_ = getenv("HOSTS");
+        const char* hosts_ = getenv("H");
         if (NULL == hosts_)
         {
-            fprintf(stderr, "parameter[-h] or environment `HOSTS` not set\n");
+            fprintf(stderr, "parameter[-h] or environment `H` not set\n");
             fprintf(stderr, "%s\n", mooon::utils::CArgumentContainer::get_singleton()->usage_string().c_str());
             exit(1);
         }
@@ -135,7 +143,7 @@ int main(int argc, char* argv[])
         mooon::utils::CStringUtils::trim(hosts);
         if (hosts.empty())
         {
-            fprintf(stderr, "parameter[-h] or environment `HOSTS` not set\n");
+            fprintf(stderr, "parameter[-h] or environment `H` not set\n");
             fprintf(stderr, "%s\n", mooon::utils::CArgumentContainer::get_singleton()->usage_string().c_str());
             exit(1);
         }
@@ -145,10 +153,10 @@ int main(int argc, char* argv[])
     if (user.empty())
     {
         // 尝试从环境变量取值
-        const char* user_ = getenv("USER");
+        const char* user_ = getenv("U");
         if (NULL == user_)
         {
-            fprintf(stderr, "parameter[-u] or environment `USER` not set\n");
+            fprintf(stderr, "parameter[-u] or environment `U` not set\n");
             fprintf(stderr, "%s\n", mooon::utils::CArgumentContainer::get_singleton()->usage_string().c_str());
             exit(1);
         }
@@ -157,7 +165,7 @@ int main(int argc, char* argv[])
         mooon::utils::CStringUtils::trim(user);
         if (user.empty())
         {
-            fprintf(stderr, "parameter[-u] or environment `USER` not set\n");
+            fprintf(stderr, "parameter[-u] or environment `U` not set\n");
             fprintf(stderr, "%s\n", mooon::utils::CArgumentContainer::get_singleton()->usage_string().c_str());
             exit(1);
         }
@@ -167,10 +175,10 @@ int main(int argc, char* argv[])
     if (password.empty())
     {
         // 尝试从环境变量取值
-        const char* password_ = getenv("PASSWORD");
+        const char* password_ = getenv("P");
         if (NULL == password_)
         {
-            fprintf(stderr, "parameter[-p] or environment `PASSWORD` not set\n");
+            fprintf(stderr, "parameter[-p] or environment `P` not set\n");
             fprintf(stderr, "%s\n", mooon::utils::CArgumentContainer::get_singleton()->usage_string().c_str());
             exit(1);
         }
@@ -178,7 +186,7 @@ int main(int argc, char* argv[])
         password= password_;
         if (password.empty())
         {
-            fprintf(stderr, "parameter[-p] or environment `PASSWORD` not set\n");
+            fprintf(stderr, "parameter[-p] or environment `P` not set\n");
             fprintf(stderr, "%s\n", mooon::utils::CArgumentContainer::get_singleton()->usage_string().c_str());
             exit(1);
         }
@@ -192,7 +200,8 @@ int main(int argc, char* argv[])
     int num_remote_hosts_ip = mooon::utils::CTokener::split(&hosts_ip, remote_hosts_ip, ",", true);
     if (0 == num_remote_hosts_ip)
     {
-        fprintf(stderr, "parameter[-h] error\n");
+    	fprintf(stderr, "parameter[-h] or environment `H` error\n");
+    	fprintf(stderr, "%s\n", mooon::utils::CArgumentContainer::get_singleton()->usage_string().c_str());
         exit(1);
     }
 
@@ -209,7 +218,7 @@ int main(int argc, char* argv[])
 			results[k].source = source_files[j];
 			results[k].success = false;
 
-			fprintf(stdout, "["PRINT_COLOR_YELLOW"%s"PRINT_COLOR_NONE"]\n", remote_host_ip.c_str());
+			fprintf(stdout, "[" PRINT_COLOR_YELLOW"%s" PRINT_COLOR_NONE"]\n", remote_host_ip.c_str());
 			fprintf(stdout, PRINT_COLOR_GREEN);
 
 			mooon::sys::CStopWatch stop_watch;
@@ -219,7 +228,7 @@ int main(int argc, char* argv[])
 				mooon::net::CLibssh2 libssh2(remote_host_ip, port, user, password, mooon::argument::t->value());
 				libssh2.upload(source_files[j], remote_filepath, &file_size);
 
-				fprintf(stdout, "["PRINT_COLOR_YELLOW"%s"PRINT_COLOR_NONE"] SUCCESS: %d bytes (%s)\n", remote_host_ip.c_str(), file_size, source_files[j].c_str());
+				fprintf(stdout, "[" PRINT_COLOR_YELLOW"%s" PRINT_COLOR_NONE"] SUCCESS: %d bytes (%s)\n", remote_host_ip.c_str(), file_size, source_files[j].c_str());
 				results[k].success = true;
 			}
 			catch (mooon::sys::CSyscallException& ex)
@@ -227,14 +236,14 @@ int main(int argc, char* argv[])
 				if (color)
 					fprintf(stdout, PRINT_COLOR_NONE); // color = true;
 
-				fprintf(stderr, "["PRINT_COLOR_RED"%s"PRINT_COLOR_NONE"] failed: %s (%s)\n", remote_host_ip.c_str(), ex.str().c_str(), source_files[j].c_str());
+				fprintf(stderr, "[" PRINT_COLOR_RED"%s" PRINT_COLOR_NONE"] failed: %s (%s)\n", remote_host_ip.c_str(), ex.str().c_str(), source_files[j].c_str());
 			}
 			catch (mooon::utils::CException& ex)
 			{
 				if (color)
 					fprintf(stdout, PRINT_COLOR_NONE); // color = true;
 
-				fprintf(stderr, "["PRINT_COLOR_RED"%s"PRINT_COLOR_NONE"] failed: %s (%s)\n", remote_host_ip.c_str(), ex.str().c_str(), source_files[j].c_str());
+				fprintf(stderr, "[" PRINT_COLOR_RED"%s" PRINT_COLOR_NONE"] failed: %s (%s)\n", remote_host_ip.c_str(), ex.str().c_str(), source_files[j].c_str());
 			}
 
 			std::cout << std::endl;
@@ -261,7 +270,7 @@ int main(int argc, char* argv[])
     std::cout << "SUCCESS: " << num_success << ", FAILURE: " << num_failure << std::endl;
 #else
     fprintf(stderr, "NOT IMPLEMENT! please install libssh2 (https://www.libssh2.org/) into /usr/local/libssh2 and recompile.\n");
-#endif // HAVE_LIBSSH2 == 1
+#endif // MOOON_HAVE_LIBSSH2 == 1
 
     return 0;
 }

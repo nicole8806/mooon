@@ -17,6 +17,7 @@
  * Author: JianYi, eyjian@qq.com or eyjian@gmail.com
  */
 #include "observer_context.h"
+#include <mooon/sys/datetime_utils.h>
 #include <mooon/sys/dir_utils.h>
 #include <mooon/sys/utils.h>
 OBSERVER_NAMESPACE_BEGIN
@@ -34,6 +35,8 @@ bool CObserverContext::create()
 	try
 	{
 		_observer_thread->start();
+		OBSERVER_LOG_INFO("observer thread started\n");
+		return true;
 	}
 	catch (sys::CSyscallException& syscall_ex)
 	{
@@ -41,12 +44,11 @@ bool CObserverContext::create()
         _observer_thread->dec_refcount();
 		return false;
 	}
-
-	return true;
 }
 
 void CObserverContext::destroy()
 {
+    OBSERVER_LOG_INFO("to stop observer thread\n");
 	_observer_thread->stop();
 	_observer_thread->dec_refcount();
 }
@@ -65,17 +67,19 @@ void CObserverContext::deregister_objservee(IObservable* observee)
 
 void CObserverContext::collect()
 {
+    const std::string& current_datetime = sys::get_formatted_current_datetime(true);
     sys::LockHelper<sys::CLock> lock_helper(_lock);
+
 	for (std::set<IObservable*>::iterator iter=_observee_set.begin(); iter!=_observee_set.end(); ++iter)
 	{
 		IObservable* observee = *iter;
-		observee->on_report(_data_reporter);
+		observee->on_report(_data_reporter, current_datetime);
 	}
 }
 
 //////////////////////////////////////////////////////////////////////////
 // 全局函数
-sys::ILogger* logger = NULL;
+sys::ILogger* observer_logger = sys::g_logger;
 static CObserverContext* g_observer_context = NULL;
 
 void destroy()
@@ -86,6 +90,12 @@ void destroy()
         delete g_observer_context;
         g_observer_context = NULL;
     }
+}
+
+void reset()
+{
+    delete g_observer_context;
+    g_observer_context = NULL;
 }
 
 IObserverManager* get()
@@ -109,26 +119,20 @@ IObserverManager* create(IDataReporter* data_reporter, uint16_t report_frequency
 
 std::string get_data_dirpath()
 {
-    std::string program_path = mooon::sys::CUtils::get_program_path();
-    std::string data_dirpath = program_path + std::string("/../data");
+    const std::string& program_path = mooon::sys::CUtils::get_program_path();
+    const std::string& data_dirpath = program_path + std::string("/../data");
 
     try
     {
-        if (mooon::sys::CDirUtils::exist(data_dirpath))
-        {
-            return data_dirpath;
-        }
-        else
-        {
-            MYLOG_ERROR("datadir[%s] not exist\n", data_dirpath.c_str());
-        }
+        if (!mooon::sys::CDirUtils::exist(data_dirpath))
+            mooon::sys::CDirUtils::create_directory_recursive(data_dirpath.c_str());
+        return data_dirpath;
     }
     catch (mooon::sys::CSyscallException& syscall_ex)
     {
-        MYLOG_ERROR("%s\n", syscall_ex.str().c_str());
+        OBSERVER_LOG_ERROR("[%s]%s\n", data_dirpath.c_str(), syscall_ex.str().c_str());
+        return std::string("");
     }
-
-    return std::string("");
 }
 
 OBSERVER_NAMESPACE_END

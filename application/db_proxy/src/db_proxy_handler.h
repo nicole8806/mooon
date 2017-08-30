@@ -19,10 +19,11 @@ struct CachedData
     sys::DBTable cached_data; // 被缓存的数据
 };
 
-class CDbProxyHandler: public DbProxyServiceIf
+class CDbProxyHandler: public DbProxyServiceIf, public mooon::observer::IObservable
 {
 public:
     CDbProxyHandler();
+    ~CDbProxyHandler();
 
     // 清理缓存
     void cleanup_cache();
@@ -35,6 +36,9 @@ private: // override DbProxyServiceIf
     virtual int64_t update2(const int32_t seq, const int32_t database_index, const std::string& tablename, const std::map<std::string, std::string> & tokens, const std::vector<Condition> & conditions);
     virtual int64_t insert2(const int32_t seq, const int32_t database_index, const std::string& tablename, const std::map<std::string, std::string> & tokens);
     virtual void query2(DBTable& _return, const int32_t seq, const int32_t database_index, const std::string& table, const std::vector<std::string> & fields, const std::vector<Condition> & conditions, const std::string& groupby, const std::string& orderby, const int32_t limit, const int32_t limit_start);
+
+private: // override mooon::observer::IObservable
+    virtual void on_report(mooon::observer::IDataReporter* data_reporter, const std::string& current_datetime);
 
 private:
     // 对字符串进行编码，以防止SQL注入
@@ -50,13 +54,33 @@ private:
     void add_data_to_cache(const DBTable& dbtable, const std::string& sql, int cached_seconds);
 
     // 入加SQL或写入文件中
-    int64_t write_sql(const struct DbInfo& db_info, sys::DBConnection* db_connection, const std::string& sql);
+    int64_t write_sql(const char* tag, int32_t seq, const struct DbInfo& db_info, sys::DBConnection* db_connection, const std::string& sql);
 
 private:
     typedef std::tr1::unordered_map<utils::CMd5Helper::Value, struct CachedData, utils::CMd5Helper::ValueHasher, utils::CMd5Helper::ValueComparer> CacheTable;
     CacheTable _cache_table; // 缓存表
     mutable sys::CReadWriteLock _cache_table_lock;
     atomic_t _cached_number; // 缓存的数据笔数
+
+private:
+    void reset();
+    volatile int _num_query_success;
+    volatile int _num_query_failure;
+    volatile int _num_query2_success;
+    volatile int _num_query2_failure;
+    volatile int _num_update_success; // 成功执行DBProxy的update次数
+    volatile int _num_update_failure;
+    volatile int _num_update2_success;
+    volatile int _num_update2_failure;
+    volatile int _num_update_success_sql; // 成功执行MySQL的update次数
+    volatile int _num_update_failure_sql;
+    volatile int _num_async_update_success;
+    volatile int _num_async_update_failure;
+    volatile int _num_insert2_success; // insert2操作成功次数
+    volatile int _num_insert2_failure;
+    volatile int _num_write_success; // write_log成功次数
+    volatile int _num_write_failure;
+    volatile int _num_error_update_sql; // 错误的update类SQL数
 };
 
 } // namespace mooon

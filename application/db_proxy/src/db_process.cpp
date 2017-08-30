@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <mooon/sys/close_helper.h>
 #include <mooon/sys/dir_utils.h>
+#include <mooon/sys/file_utils.h>
 #include <mooon/sys/safe_logger.h>
 #include <mooon/sys/signal_handler.h>
 #include <mooon/sys/stop_watch.h>
@@ -12,15 +13,23 @@
 #include <sys/uio.h>
 
 INTEGER_ARG_DECLARE(uint16_t, port);
-INTEGER_ARG_DECLARE(int, sql_file_size);
+INTEGER_ARG_DECLARE(uint16_t, report_frequency_seconds);
+INTEGER_ARG_DECLARE(int32_t, sql_file_size);
+INTEGER_ARG_DECLARE(uint16_t, port);
 INTEGER_ARG_DECLARE(uint8_t, batch);
 INTEGER_ARG_DECLARE(uint16_t, efficiency);
+INTEGER_ARG_DECLARE(uint16_t, history_days);
+INTEGER_ARG_DECLARE(uint8_t, history_hour);
+INTEGER_ARG_DECLARE(uint8_t, auto_exit);
 namespace mooon { namespace db_proxy {
 
 CDbProcess::CDbProcess(const struct DbInfo& dbinfo)
-    : _progess_fd(-1), _dbinfo(dbinfo), _stop_signal_thread(false), _signal_thread(NULL),
-      _consecutive_failures(0), _num_sqls(0), _db_connected(false)
+    : _report_frequency_seconds(mooon::argument::report_frequency_seconds->value()),
+      _progess_fd(-1), _dbinfo(dbinfo), _stop_signal_thread(false), _signal_thread(NULL),
+      _consecutive_failures(0), _db_connected(false), _old_history_files_deleted_today(false)
 {
+    reset();
+
     const std::string program_path = sys::CUtils::get_program_path();
     _log_dirpath = get_log_dirpath(_dbinfo.alias);
 
@@ -31,6 +40,14 @@ CDbProcess::CDbProcess(const struct DbInfo& dbinfo)
 
 CDbProcess::~CDbProcess()
 {
+    if (_report_frequency_seconds > 0)
+    {
+        mooon::observer::IObserverManager* observer_mananger = mooon::observer::get();
+        if (observer_mananger != NULL)
+            observer_mananger->deregister_objservee(this);
+        mooon::observer::destroy();
+    }
+
     if (_progess_fd != -1)
         close(_progess_fd);
     if (_signal_thread != NULL)
@@ -50,7 +67,37 @@ void CDbProcess::run()
 
     delete sys::g_logger; // 不共享父进程的日志文件
     sys::g_logger = sys::create_safe_logger(log_dirpath, db_process_title, SIZE_8K);
-    MYLOG_INFO("db_process(%u): %s\n", getpid(), db_process_title.c_str());
+    MYLOG_INFO("db_process(%u) started: %s, report_frequency_seconds: %d\n", getpid(), db_process_title.c_str(), _report_frequency_seconds);
+
+    if (_report_frequency_seconds > 0)
+    {
+        observer::observer_logger = sys::g_logger;
+        observer::reset(); // 得先释放父进程的
+
+        std::string data_dirpath = mooon::observer::get_data_dirpath();
+        if (data_dirpath.empty())
+        {
+            MYLOG_WARN("datadir not exists\n");
+        }
+        else
+        {
+            _data_logger.reset(new mooon::sys::CSafeLogger(data_dirpath.c_str(), utils::CStringUtils::format_string("%s_%d.data", _dbinfo.alias.c_str(), argument::port->value()).c_str()));
+            _data_logger->enable_raw_log(true);
+            _data_logger->set_backup_number(2);
+            _data_reporter.reset(new mooon::observer::CDefaultDataReporter(_data_logger.get()));
+
+            observer::IObserverManager* observer_mananger = mooon::observer::create(_data_reporter.get(), _report_frequency_seconds);
+            if (NULL == observer_mananger)
+            {
+                MYLOG_WARN("create observer mananger failed\n");
+            }
+            else
+            {
+                MYLOG_INFO("create observer mananger ok\n");
+                observer_mananger->register_observee(this);
+            }
+        }
+    }
 
     if (create_history_directory())
     {
@@ -59,9 +106,12 @@ void CDbProcess::run()
             _signal_thread = new sys::CThreadEngine(sys::bind(&CDbProcess::signal_thread, this));
             while (!_stop_signal_thread)
             {
-                if (parent_process_not_exists())
-                    break;
+                delete_old_history_files();
 
+                if (parent_process_not_exists())
+                {
+                    break;
+                }
                 if (!_db_connected && !connect_db())
                 {
                     sys::CUtils::millisleep(1000);
@@ -69,8 +119,6 @@ void CDbProcess::run()
                 }
 
                 handle_directory();
-                if (!_stop_signal_thread)
-                    sys::CUtils::millisleep(1000);
             }
         }
     }
@@ -90,6 +138,8 @@ void CDbProcess::on_terminated()
 {
     _stop_signal_thread = true;
     MYLOG_INFO("dbprocess(%u, %s) will exit\n", static_cast<unsigned int>(getpid()), _dbinfo.str().c_str());
+    if (_report_frequency_seconds > 0)
+        mooon::observer::destroy();
 }
 
 void CDbProcess::on_child_end(pid_t child_pid, int child_exited_status)
@@ -107,17 +157,30 @@ void CDbProcess::on_exception(int errcode) throw ()
     MYLOG_ERROR("dbprocess(%u, %s) error: (%d)%s\n", static_cast<unsigned int>(getpid()), _dbinfo.str().c_str(), errcode, sys::Error::to_string(errcode).c_str());
 }
 
+bool CDbProcess::is_over(uint32_t offset) const
+{
+    return offset >= static_cast<uint32_t>(argument::sql_file_size->value());
+}
+
 bool CDbProcess::parent_process_not_exists() const
 {
-    pid_t ppid = getppid();
-    if (1 == ppid)
+    if (0 == mooon::argument::auto_exit->value())
     {
-        // 父进程不在则自动退出
-        MYLOG_INFO("dbprocess(%u, %s) will exit for parent process not exit\n", static_cast<unsigned int>(getpid()), _dbinfo.str().c_str());
-        return true;
+        // 不自动退出
+        return false;
     }
+    else
+    {
+        pid_t ppid = getppid();
+        if (1 == ppid)
+        {
+            // 父进程不在则自动退出
+            MYLOG_INFO("dbprocess(%u, %s) will exit for parent process not exit\n", static_cast<unsigned int>(getpid()), _dbinfo.str().c_str());
+            return true;
+        }
 
-    return false;
+        return false;
+    }
 }
 
 bool CDbProcess::create_history_directory() const
@@ -148,183 +211,218 @@ void CDbProcess::handle_directory()
     std::vector<std::string> file_names;
 
     sys::CDirUtils::list(_log_dirpath, subdir_names, &file_names, link_names);
-    if (!file_names.empty())
+    if (file_names.empty())
+    {
+        if (!_stop_signal_thread)
+        {
+            sys::CUtils::millisleep(1000);
+        }
+    }
+    else
     {
         // 文件名格式为：
         // sql.timestamp.suffix，需要按timespamp从小到大排充，如果timestamp相同则按suffix从小到大排序
         std::sort(file_names.begin(), file_names.end());
 
+        int valid_log_count = 0; // 有效的log文件数
         for (std::vector<std::string>::size_type i=0; !_stop_signal_thread&&i<file_names.size(); ++i)
         {
-            if (parent_process_not_exists())
-                break;
-
             const std::string& filename = file_names[i];
-            if (is_sql_log_filename(filename))
-                handle_file(filename);
-            if (_stop_signal_thread)
+
+            if (parent_process_not_exists())
+            {
                 break;
+            }
+            if (is_sql_log_filename(filename))
+            {
+                ++valid_log_count;
+
+                if (file_handled(filename))
+                    archive_file(filename);
+                else
+                    handle_file(filename);
+            }
+            if (_stop_signal_thread)
+            {
+                break;
+            }
+        }
+
+        // empty
+        if (0 == valid_log_count)
+        {
+            sys::CUtils::millisleep(1000);
         }
     }
 }
 
 bool CDbProcess::handle_file(const std::string& filename)
 {
-    if (file_handled(filename))
-    {
-        MYLOG_INFO("handled: %s\n", filename.c_str());
-    }
-    else
-    {
-        MYLOG_DEBUG("handling: %s\n", filename.c_str());
-    }
-
-    const std::string log_filepath = _log_dirpath + std::string("/") + filename;
     uint32_t offset = 0;
+    const std::string& log_tag = _dbinfo.alias + std::string("/") + filename;
+    const std::string& log_filepath = _log_dirpath + std::string("/") + filename;
+
+    MYLOG_INFO("handling: %s\n", log_filepath.c_str());
     int fd = open(log_filepath.c_str(), O_RDONLY);
     if (-1 == fd)
     {
         MYLOG_ERROR("open %s error: %s\n", log_filepath.c_str(), sys::Error::to_string().c_str());
         return false;
     }
-    else
-    {
-        sys::CloseHelper<int> close_helper(fd);
-        if (is_current_file(filename))
-        {
-            if (-1 == lseek(fd, _progress.offset, SEEK_SET))
-            {
-                MYLOG_ERROR("lseek %s error: %s\n", _progress.str().c_str(), sys::Error::to_string().c_str());
-                return false;
-            }
 
+    sys::CloseHelper<int> close_helper(fd);
+    if (is_current_file(filename))
+    {
+        if (-1 == lseek(fd, _progress.offset, SEEK_SET))
+        {
+            MYLOG_ERROR("lseek %s error(%s): %s\n", _progress.str().c_str(), log_filepath.c_str(), sys::Error::to_string().c_str());
+            return false;
+        }
+        else
+        {
             offset = _progress.offset;
-            MYLOG_INFO("lseek %s to %u\n", _progress.str().c_str(), _progress.offset);
+            MYLOG_INFO("lseek %s to %u offset: %s\n", _progress.str().c_str(), _progress.offset, log_filepath.c_str());
+        }
+    }
+
+    int count = 0; // 入库的条数
+    int consecutive_nodata = 0; // 连续无data的次数
+    while (!_stop_signal_thread)
+    {
+        int bytes = 0;
+        int32_t length = 0;
+        if (parent_process_not_exists())
+        {
+            break;
         }
 
-        int count = 0; // 入库的条数
-        int consecutive_nodata = 0; // 连续无data的次数
-        while (!_stop_signal_thread)
+        // 读取SQL语句长度
+        bytes = read(fd, &length, sizeof(length));
+        if (-1 == bytes)
         {
-            int bytes = 0;
-            int32_t length = 0;
-            if (parent_process_not_exists())
-                break;
-
-            // 读取SQL语句长度
-            bytes = read(fd, &length, sizeof(length));
-            if (-1 == bytes)
+            MYLOG_ERROR("read %s:%u error: %s\n", log_filepath.c_str(), offset, sys::Error::to_string().c_str());
+            return false;
+        }
+        else if (0 == bytes)
+        {
+            if (is_over(offset))
             {
-                MYLOG_ERROR("read %s error: %s\n", log_filepath.c_str(), sys::Error::to_string().c_str());
-                return false;
-            }
-            else if (0 == bytes)
-            {
-                if (0 == consecutive_nodata++%1000)
-                {
-                    MYLOG_INFO("no data to sleep: %s\n", _progress.str().c_str());
-                }
-
-                // 可以考虑引入inotify，改轮询为监听方式
-                sys::CUtils::millisleep(1000);
-                continue;
-            }
-            if (0 == length)
-            {
-                // END
-                MYLOG_INFO("%s ENDED: %d\n", _progress.str().c_str(), count);
-                // 归档
                 archive_file(filename);
                 break;
             }
-
-            consecutive_nodata = 0; // reset
-            if (bytes > 0)
-                offset += static_cast<uint32_t>(bytes);
-
-            // 读取SQL语句
-            std::string sql(length, '\0');
-            bytes = read(fd, const_cast<char*>(sql.data()), length);
-            if (-1 == bytes)
+            if (0 == consecutive_nodata++%1000)
             {
-                MYLOG_ERROR("read %s error: %s\n", log_filepath.c_str(), sys::Error::to_string().c_str());
-                return false;
-            }
-            if (bytes > 0)
-            {
-                offset += static_cast<uint32_t>(bytes);
+                MYLOG_INFO("[%s:%u]no data to sleep: %s\n", log_filepath.c_str(), offset, _progress.str().c_str());
             }
 
-            // 操作DB异常时不断重试
-            while (!_stop_signal_thread)
-            {
-                if (parent_process_not_exists())
-                    break;
+            // 可以考虑引入inotify，改轮询为监听方式
+            sys::CUtils::millisleep(1000);
+            continue;
+        }
 
-                try
+        consecutive_nodata = 0; // reset
+        if (bytes > 0)
+        {
+            offset += static_cast<uint32_t>(bytes);
+        }
+
+        // 读取SQL语句
+        std::string sql(length, '\0');
+        bytes = read(fd, const_cast<char*>(sql.data()), length);
+        if (-1 == bytes)
+        {
+            MYLOG_ERROR("read %s:%u error: %s\n", log_filepath.c_str(), offset, sys::Error::to_string().c_str());
+            return false;
+        }
+        if (bytes > 0)
+        {
+            offset += static_cast<uint32_t>(bytes);
+        }
+
+        // 操作DB异常时不断重试
+        MYLOG_DEBUG("%s\n", sql.c_str());
+        while (!_stop_signal_thread)
+        {
+            if (parent_process_not_exists())
+            {
+                break;
+            }
+
+            try
+            {
+                const int rows = _mysql.update("%s", sql.c_str());
+                const time_t end_time = time(NULL);
+                const int interval = static_cast<int>(end_time - _begin_time);
+
+                if (mooon::argument::batch->value() <= 1)
                 {
-                    const int rows = _mysql.update("%s", sql.c_str());
-                    const time_t end_time = time(NULL);
-                    const int interval = static_cast<int>(end_time - _begin_time);
+                    // 非批量提交
+                    ++count;
+                    ++_interval_count;
 
-                    if (mooon::argument::batch->value() <= 1)
+                    if (interval >= mooon::argument::efficiency->value())
                     {
-                        // 非批量提交
-                        ++count;
-                        ++_interval_count;
+                        MYLOG_INFO("[%s:%u]efficiency: %d (%d, %ds)\n", log_tag.c_str(), offset, _interval_count/interval, _interval_count, interval);
+                        _begin_time = end_time;
+                        _interval_count = 0;
+                    }
+                }
+                else
+                {
+                    ++_batch;
+
+                    // 批量提交
+                    if (_batch >= mooon::argument::batch->value() || (interval > 1))
+                    {
+                        _mysql.commit();
+                        count += _batch;
+                        _interval_count += _batch;
+                        _batch = 0;
 
                         if (interval >= mooon::argument::efficiency->value())
                         {
-                            MYLOG_INFO("efficiency: %d (%d, %ds)\n", _interval_count/interval, _interval_count, interval);
+                            MYLOG_INFO("[%s:%u] efficiency: %d (%d, %ds)\n", log_tag.c_str(), offset, _interval_count/interval, _interval_count, interval);
                             _begin_time = end_time;
                             _interval_count = 0;
                         }
                     }
-                    else
-                    {
-                        ++_batch;
+                }
 
-                        // 批量提交
-                        if (_batch >= mooon::argument::batch->value() || (interval > 1))
-                        {
-                            _mysql.commit();
-                            count += _batch;
-                            _interval_count += _batch;
-                            _batch = 0;
+                // 更新进度
+                if (!update_progress(filename, offset))
+                {
+                    return false;
+                }
 
-                            if (interval >= mooon::argument::efficiency->value())
-                            {
-                                MYLOG_INFO("efficiency: %d (%d, %ds)\n", _interval_count/interval, _interval_count, interval);
-                                _begin_time = end_time;
-                                _interval_count = 0;
-                            }
-                        }
-                    }
+                // rows为0可能是失败，比如update时没有满足where条件的记录存在时
+                if (0 == rows)
+                {
+                    MYLOG_WARN("[UPDATE_WARNING][%s:%u][%s] ok: %d, %" PRIu64"\n", log_tag.c_str(), offset, sql.c_str(), rows, _success_num_sqls);
+                }
+                else if (0 == ++_success_num_sqls%1000)
+                {
+                    MYLOG_DEBUG("[%s:%u][%s][ROWS:%d] %s-lines: %" PRIu64"\n", log_tag.c_str(), offset, sql.c_str(), rows, _dbinfo.alias.c_str(), _success_num_sqls);
+                }
+                else
+                {
+                    MYLOG_DEBUG("[%s:%u][%s] ok: %d, %" PRIu64"\n", log_tag.c_str(), offset, sql.c_str(),  rows, _success_num_sqls);
+                }
 
-                    // 更新进度
-                    if (!update_progress(filename, offset))
-                        return false;
+                break;
+            }
+            catch (sys::CDBException& ex)
+            {
+                MYLOG_ERROR("[%s:%u]%s\n", log_tag.c_str(), offset, ex.str().c_str());
 
-                    if (0 == ++_num_sqls%10000)
-                    {
-                        MYLOG_INFO("[%s] ok: %d, %" PRIu64"\n", sql.c_str(), rows, _num_sqls);
-                    }
-                    else
-                    {
-                        MYLOG_DEBUG("[%s] ok: %d, %" PRIu64"\n", sql.c_str(), rows, _num_sqls);
-                    }
-
+                // 网络类需要重试，直到成功
+                if (!_mysql.is_disconnected_exception(ex))
+                {
+                    ++_failure_num_sqls;
                     break;
                 }
-                catch (sys::CDBException& ex)
-                {
-                    MYLOG_ERROR("%s\n", ex.str().c_str());
 
-                    // 网络类需要重试，直到成功
-                    if (!_mysql.is_disconnected_exception(ex))
-                        break;
-                    sys::CUtils::millisleep(1000);
-                }
+                ++_retry_times;
+                sys::CUtils::millisleep(1000);
             }
         }
     }
@@ -477,8 +575,8 @@ bool CDbProcess::open_progress()
 
 void CDbProcess::archive_file(const std::string& filename) const
 {
-    const std::string filepath = _log_dirpath + std::string("/") + filename;
-    const std::string archived_filepath = _log_dirpath + std::string("/history/") + filename;
+    const std::string& filepath = get_filepath(filename);
+    const std::string& archived_filepath = get_archived_filepath(filename);
     if (-1 == rename(filepath.c_str(), archived_filepath.c_str()))
     {
         MYLOG_ERROR("archived %s to %s failed: %s\n", filepath.c_str(), archived_filepath.c_str(), sys::Error::to_string().c_str());
@@ -487,6 +585,104 @@ void CDbProcess::archive_file(const std::string& filename) const
     {
         MYLOG_INFO("archived %s to %s ok\n", filepath.c_str(), archived_filepath.c_str());
     }
+}
+
+std::string CDbProcess::get_filepath(const std::string& filename) const
+{
+    return _log_dirpath + std::string("/") + filename;
+}
+
+std::string CDbProcess::get_archived_filepath(const std::string& filename) const
+{
+    const std::string& history_dirpath = get_history_dirpath();
+    return history_dirpath + std::string("/") + filename;
+}
+
+std::string CDbProcess::get_history_dirpath() const
+{
+    return _log_dirpath + std::string("/history");
+}
+
+void CDbProcess::delete_old_history_files()
+{
+    const time_t current_seconds = time(NULL);
+    struct tm current_struct;
+    (void)localtime_r(&current_seconds, &current_struct);
+
+    if (current_struct.tm_hour != mooon::argument::history_hour->value())
+    {
+        _old_history_files_deleted_today = false;
+    }
+    else
+    {
+        if (!_old_history_files_deleted_today)
+        {
+            _old_history_files_deleted_today = true;
+
+            std::vector<std::string> file_names;
+            std::vector<std::string>* subdir_names = NULL;
+            std::vector<std::string>* link_names= NULL;
+            const std::string& history_dirpath = get_history_dirpath();
+
+            mooon::sys::CDirUtils::list(history_dirpath, subdir_names, &file_names, link_names);
+            for (std::vector<std::string>::size_type i=0; !_stop_signal_thread&&i<file_names.size(); ++i)
+            {
+                struct stat st;
+                const std::string& filename = file_names[i];
+                const std::string& filepath = history_dirpath + std::string("/") + filename;
+
+                if (-1 == stat(filepath.c_str(), &st))
+                {
+                    MYLOG_ERROR("stat %s error: %s\n", filepath.c_str(), sys::Error::to_string().c_str());
+                }
+                else
+                {
+                    const int64_t interval_seconds = static_cast<int64_t>(current_seconds - st.st_mtime);
+
+                    if (interval_seconds < 3600*24*mooon::argument::history_days->value())
+                    {
+                        MYLOG_DEBUG("keep %s: %" PRId64", %" PRId64", %" PRId64"\n", filepath.c_str(), interval_seconds, (int64_t)current_seconds, (int64_t)st.st_mtime);
+                    }
+                    else
+                    {
+                        try
+                        {
+                            MYLOG_INFO("to remove history sql log(%" PRId64", %" PRId64", %" PRId64"): %s\n", interval_seconds, (int64_t)current_seconds, (int64_t)st.st_mtime, filepath.c_str());
+                            mooon::sys::CFileUtils::remove(filepath.c_str());
+                        }
+                        catch (mooon::sys::CSyscallException& ex)
+                        {
+                            MYLOG_ERROR("remove %s failed: %s\n", filepath.c_str(), ex.str().c_str());
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+void CDbProcess::on_report(mooon::observer::IDataReporter* data_reporter, const std::string& current_datetime)
+{
+    if (((_success_num_sqls > 0) && (_success_num_sqls > _last_success_num_sqls)) ||
+        ((_failure_num_sqls > 0) && (_failure_num_sqls > _last_failure_num_sqls)) ||
+        ((_retry_times > 0) && (_retry_times > _last_retry_times)))
+    {
+        _last_success_num_sqls = _success_num_sqls;
+        _last_failure_num_sqls = _failure_num_sqls;
+        _last_retry_times = _retry_times;
+
+        data_reporter->report("[%s]%" PRIu64",%" PRIu64",%" PRIu64"\n", current_datetime.c_str(), _success_num_sqls, _failure_num_sqls, _retry_times);
+    }
+}
+
+void CDbProcess::reset()
+{
+    _success_num_sqls = 0;
+    _last_success_num_sqls = 0;
+    _failure_num_sqls = 0;
+    _last_failure_num_sqls = 0;
+    _retry_times = 0;
+    _last_retry_times = 0;
 }
 
 }} // namespace mooon { namespace db_proxy {

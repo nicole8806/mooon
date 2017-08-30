@@ -8,7 +8,7 @@ endif ()
 
 include_directories(.)
 include_directories(../..)
-link_libraries(libmooon.a)
+link_libraries(libmooon_observer.a libmooon.a)
 
 # 执行cmake时，就编译好thrift文件
 exec_program(${THRIFT_HOME}/bin/thrift ARGS --gen cpp -r -out ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/db_proxy.thrift)
@@ -19,6 +19,10 @@ set(RPC DbProxyService.cpp db_proxy_constants.cpp db_proxy_types.cpp)
 # sqllog文件检测工具
 add_executable(check_sqllog check_sqllog.cpp)
 target_link_libraries(check_sqllog libmooon.a)
+
+# db_proxy_tool
+add_executable(db_proxy_tool db_proxy_tool.cpp)
+target_link_libraries(db_proxy_tool libmooon.a)
 
 # dbproxy客户端工具
 add_executable(db_proxy_client db_proxy_client.cpp ${RPC})

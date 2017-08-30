@@ -20,6 +20,7 @@
 #define MOOON_SYS_DATETIME_UTILS_H
 #include "mooon/sys/utils.h"
 #include <time.h>
+#include <vector>
 SYS_NAMESPACE_BEGIN
 
 /** 日期时间工具类
@@ -193,7 +194,54 @@ public:
 
     // 得到当前的微秒值
     static int64_t get_current_microseconds();
+
+    // 取年、月、日、时、分、秒，周几，如果tm或t值为NULL，则表示为当前时间
+    //
+    // year 年份，如2017，不需要可传NULL
+    // month 月份，如：8，不需要可传NULL
+    // day 月中的天，如：1，不需要可传NULL
+    // hour 小时，如：11，不需要可传NULL
+    // minute 分，如：37，不需要可传NULL
+    // second 秒，如：32，不需要可传NULL
+    // week 周几，如3，不需要可传NULL
+    //
+    // 假设tm或t对应的时间为：2017-08-10 10:53:22，则
+    // year值为2017，
+    // month值为8，
+    // day值为10，
+    // hour值为10，
+    // minute值为53，
+    // second值为22，
+    // week值为4
+    static void get_datetime_number(const struct tm* tm, int* year, int* month=NULL, int* day=NULL, int* hour=NULL, int* minute=NULL, int* second=NULL, int* week=NULL);
+    static void get_datetime_number(const time_t* t, int* year, int* month=NULL, int* day=NULL, int* hour=NULL, int* minute=NULL, int* second=NULL, int* week=NULL);
+    static int get_year_number(const struct tm* tm=NULL);
+    static int get_month_number(const struct tm* tm=NULL);
+    static int get_day_number(const struct tm* tm=NULL);
+    static int get_hour_number(const struct tm* tm=NULL);
+    static int get_minute_number(const struct tm* tm=NULL);
+    static int get_second_number(const struct tm* tm=NULL);
+    static int get_week_number(const struct tm* tm=NULL);
+
+    // 取得两个日期的月天
+    // 如果startdate或为无效时间，包括格式不满足“YYYY-MM-DD”，则返回0，
+    // 如果enddate小于startdate，也返回0，
+    // 成功返回天数
+    //
+    // 示例1：startdate和enddate均为“2017-08-08”时，dayofmonth_array元素为8，
+    // 示例2：startdate为“2017-08-08”，enddate为“2017-08-09”，dayofmonth_array元素为8和9
+    // 示例3：startdate为“2017-08-30”，enddate为“2017-09-01”，dayofmonth_array元素为30、31和1
+    static int get_dayofmonth_array(const std::string& startdate, const std::string& enddate, std::vector<int>* dayofmonth_array);
 };
+
+// 是否为有效的日期时间，str格式要求为“YYYY-MM-DD hh:mm:ss”
+extern bool is_valid_datetime(const std::string& str);
+
+// 是否为有效的日期，str格式要求为“YYYY-MM-DD”
+extern bool is_valid_date(const std::string& str);
+
+// 是否为有效的时间，str格式要求为“hh:mm:ss”
+extern bool is_valid_time(const std::string& str);
 
 // 返回从1970-01-01 00:00:00以来的秒，返回值和time(NULL)的返回值相等
 extern uint64_t current_seconds();
