@@ -164,6 +164,7 @@ void move_thread_proc(uint8_t i)
             if (!src_redis.rpop(src_key, &value))
             {
                 mooon::sys::CUtils::millisleep(interval);
+                continue;
             }
         }
         catch (r3c::CRedisException& ex)
@@ -173,7 +174,7 @@ void move_thread_proc(uint8_t i)
             continue;
         }
 
-        while (!g_stop)
+        do
         {
             try
             {
@@ -189,7 +190,7 @@ void move_thread_proc(uint8_t i)
                 MYLOG_ERROR("[%s]=>[%s]: %s\n", src_key.c_str(), dst_key.c_str(), ex.str().c_str());
                 mooon::sys::CUtils::millisleep(interval);
             }
-        }
+        } while (!g_stop);
     }
 }
 
