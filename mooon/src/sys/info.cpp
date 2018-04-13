@@ -46,6 +46,9 @@ bool CInfo::get_sys_info(sys_info_t& sys_info)
 // sysconf(_SC_PAGESIZE)
 // sysconf(_SC_PHYS_PAGES);
 // sysconf(_SC_AVPHYS_PAGES);
+//
+// 在Centos Linux上执行：info proc，
+// 可以搜索到关于文件“/proc/meminfo”的结构介绍。
 bool CInfo::get_mem_info(mem_info_t& mem_info)
 {
     FILE* fp = fopen("/proc/meminfo", "r");
@@ -107,6 +110,8 @@ bool CInfo::get_mem_info(mem_info_t& mem_info)
     return (i == member_number);
 }
 
+// 在Centos Linux上执行：info proc，
+// 可以搜索到关于文件“/proc/stat”的结构介绍。
 bool CInfo::get_cpu_info(cpu_info_t& cpu_info)
 {
     FILE* fp = fopen("/proc/stat", "r");
@@ -134,6 +139,8 @@ bool CInfo::get_cpu_info(cpu_info_t& cpu_info)
     return (name[0] != '\0');
 }
 
+// 在Centos Linux上执行：info proc，
+// 可以搜索到关于文件“/proc/stat”的结构介绍。
 int CInfo::get_cpu_info_array(std::vector<cpu_info_t>& cpu_info_array)
 {
     cpu_info_array.clear();
@@ -162,6 +169,8 @@ int CInfo::get_cpu_info_array(std::vector<cpu_info_t>& cpu_info_array)
     return cpu_info_array.size();
 }
 
+// 在Centos Linux上执行：info proc，
+// 可以搜索到关于文件“/proc/version”的结构介绍。
 bool CInfo::get_kernel_version(kernel_version_t& kernel_version)
 {
     FILE* fp = fopen("/proc/version", "r");
@@ -198,71 +207,97 @@ bool CInfo::get_kernel_version(kernel_version_t& kernel_version)
 
 bool CInfo::get_process_info(process_info_t& process_info)
 {
-    pid_t pid = getpid();
+    return get_process_info(&process_info);
+}
+
+bool CInfo::get_process_info(process_info_t* process_info)
+{
+    const pid_t pid = getpid();
     return get_process_info(process_info, pid);
 }
 
 bool CInfo::get_process_info(process_info_t& process_info, pid_t pid)
 {
+    return get_process_info(&process_info, pid);
+}
+
+// 在Centos Linux上执行：info proc，
+// 可以搜索到关于文件“/proc/[pid]/stat”的结构介绍。
+bool CInfo::get_process_info(process_info_t* process_info, pid_t pid)
+{
     char filename[FILENAME_MAX];
     snprintf(filename, sizeof(filename), "/proc/%u/stat", pid);
-
     FILE* fp = fopen(filename, "r");
-    if (NULL == fp) return false;
-    sys::CloseHelper<FILE*> ch(fp);
 
-    char line[LINE_MAX];
-    int filed_number = 38;
-	char* linep = fgets(line, sizeof(line)-1, fp);
+    do
+    {
+        if (NULL == fp) break;
 
-    if (NULL == linep) return false;
+        char line[LINE_MAX];
+        const int filed_number = 38;
+        const char* linep = fgets(line, sizeof(line)-1, fp);
+        if (NULL == linep) break;
 
-    return (sscanf(line, "%d%s%s%d%d"
-                         "%d%d%d%u%lu"
-                         "%lu%lu%lu%lu%lu"
-                         "%ld%ld%ld%ld%ld"
-                         "%ld%lld%lu%ld%lu"
-                         "%lu%lu%lu%lu%lu"
-                         "%lu%lu%lu%lu%lu"
-                         "%lu%d%d"
-              /** 01 */ ,&process_info.pid
-              /** 02 */ , process_info.comm
-              /** 03 */ ,&process_info.state
-              /** 04 */ ,&process_info.ppid
-              /** 05 */ ,&process_info.pgrp
-              /** 06 */ ,&process_info.session
-              /** 07 */ ,&process_info.tty_nr
-              /** 08 */ ,&process_info.tpgid
-              /** 09 */ ,&process_info.flags
-              /** 10 */ ,&process_info.minflt
-              /** 11 */ ,&process_info.cminflt
-              /** 12 */ ,&process_info.majflt
-              /** 13 */ ,&process_info.cmajflt
-              /** 14 */ ,&process_info.utime
-              /** 15 */ ,&process_info.stime
-              /** 16 */ ,&process_info.cutime
-              /** 17 */ ,&process_info.cstime
-              /** 18 */ ,&process_info.priority
-              /** 19 */ ,&process_info.nice
-              /** 20 */ ,&process_info.num_threads
-              /** 21 */ ,&process_info.itrealvalue
-              /** 22 */ ,&process_info.starttime
-              /** 23 */ ,&process_info.vsize
-              /** 24 */ ,&process_info.rss
-              /** 25 */ ,&process_info.rlim
-              /** 26 */ ,&process_info.startcode
-              /** 27 */ ,&process_info.endcode
-              /** 28 */ ,&process_info.startstack
-              /** 29 */ ,&process_info.kstkesp
-              /** 30 */ ,&process_info.kstkeip
-              /** 31 */ ,&process_info.signal
-              /** 32 */ ,&process_info.blocked
-              /** 33 */ ,&process_info.sigignore
-              /** 34 */ ,&process_info.sigcatch
-              /** 35 */ ,&process_info.nswap
-              /** 36 */ ,&process_info.cnswap
-              /** 37 */ ,&process_info.exit_signal
-              /** 38 */ ,&process_info.processor) == filed_number);
+        process_info_t pi;
+        const int num = sscanf(line, "%d%s%s%d%d"
+                             "%d%d%d%u%" PRIu64
+                             "%" PRIu64"%" PRIu64"%" PRIu64"%" PRIu64"%" PRIu64
+                             "%" PRId64"%" PRId64"%" PRId64"%" PRId64"%" PRId64
+                             "%" PRId64"%" PRId64"%" PRIu64"%" PRId64"%" PRIu64
+                             "%" PRIu64"%" PRIu64"%" PRIu64"%" PRIu64"%" PRIu64
+                             "%" PRIu64"%" PRIu64"%" PRIu64"%" PRIu64"%" PRIu64
+                             "%" PRIu64"%d%d"
+                  /** 01 */ ,&pi.pid
+                  /** 02 */ , pi.comm
+                  /** 03 */ ,&pi.state
+                  /** 04 */ ,&pi.ppid
+                  /** 05 */ ,&pi.pgrp
+                  /** 06 */ ,&pi.session
+                  /** 07 */ ,&pi.tty_nr
+                  /** 08 */ ,&pi.tpgid
+                  /** 09 */ ,&pi.flags
+                  /** 10 */ ,&pi.minflt
+                  /** 11 */ ,&pi.cminflt
+                  /** 12 */ ,&pi.majflt
+                  /** 13 */ ,&pi.cmajflt
+                  /** 14 */ ,&pi.utime
+                  /** 15 */ ,&pi.stime
+                  /** 16 */ ,&pi.cutime
+                  /** 17 */ ,&pi.cstime
+                  /** 18 */ ,&pi.priority
+                  /** 19 */ ,&pi.nice
+                  /** 20 */ ,&pi.num_threads
+                  /** 21 */ ,&pi.itrealvalue
+                  /** 22 */ ,&pi.starttime
+                  /** 23 */ ,&pi.vsize
+                  /** 24 */ ,&pi.rss
+                  /** 25 */ ,&pi.rlim
+                  /** 26 */ ,&pi.startcode
+                  /** 27 */ ,&pi.endcode
+                  /** 28 */ ,&pi.startstack
+                  /** 29 */ ,&pi.kstkesp
+                  /** 30 */ ,&pi.kstkeip
+                  /** 31 */ ,&pi.signal
+                  /** 32 */ ,&pi.blocked
+                  /** 33 */ ,&pi.sigignore
+                  /** 34 */ ,&pi.sigcatch
+                  /** 35 */ ,&pi.nswap
+                  /** 36 */ ,&pi.cnswap
+                  /** 37 */ ,&pi.exit_signal
+                  /** 38 */ ,&pi.processor);
+
+        if (num == filed_number)
+        {
+            memcpy(process_info, &pi, sizeof(pi));
+        }
+
+        fclose(fp);
+        return (num == filed_number);
+    } while(false);
+
+    if (fp != NULL)
+        fclose(fp);
+    return false;
 }
 
 bool CInfo::get_process_page_info(process_page_info_t& process_page_info)
@@ -271,6 +306,8 @@ bool CInfo::get_process_page_info(process_page_info_t& process_page_info)
     return get_process_page_info(process_page_info, pid);
 }
 
+// 在Centos Linux上执行：info proc，
+// 可以搜索到关于文件“/proc/[pid]/statm”的结构介绍。
 bool CInfo::get_process_page_info(process_page_info_t& process_page_info, pid_t pid)
 {
     char filename[FILENAME_MAX];
@@ -287,7 +324,7 @@ bool CInfo::get_process_page_info(process_page_info_t& process_page_info, pid_t 
     if (NULL == linep) return false;
 
     return (sscanf(line
-                  ,"%ld%ld%ld%ld%ld%ld"
+                  ,"%" PRId64"%" PRId64"%" PRId64"%" PRId64"%" PRId64"%" PRId64
                   ,&process_page_info.size
                   ,&process_page_info.resident
                   ,&process_page_info.share
@@ -311,6 +348,8 @@ bool CInfo::get_process_times(process_time_t& process_time)
     return true;
 }
 
+// 在Centos Linux上执行：info proc，
+// 可以搜索到关于文件“/proc/net/dev”的结构介绍。
 bool CInfo::do_get_net_info_array(const char* interface_name, std::vector<net_info_t>& net_info_array)
 {
     net_info_array.clear();
@@ -344,10 +383,10 @@ bool CInfo::do_get_net_info_array(const char* interface_name, std::vector<net_in
         net_info_t net_info;
         if (sscanf(line_p
                       ,"%s"
-                       "%lu%lu%lu%lu%lu"
-                       "%lu%lu%lu%lu%lu"
-                       "%lu%lu%lu%lu%lu"
-                       "%lu"
+                       "%" PRIu64"%" PRIu64"%" PRIu64"%" PRIu64"%" PRIu64
+                       "%" PRIu64"%" PRIu64"%" PRIu64"%" PRIu64"%" PRIu64
+                       "%" PRIu64"%" PRIu64"%" PRIu64"%" PRIu64"%" PRIu64
+                       "%" PRIu64
             /** 01 */ , net_info.interface_name
             /** 02 */ ,&net_info.receive_bytes
             /** 03 */ ,&net_info.receive_packets

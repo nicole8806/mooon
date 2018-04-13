@@ -147,6 +147,27 @@ void CDatetimeUtils::extract_datetime(const std::string& datetime, std::string* 
     }
 }
 
+// date: YYYY-MM-DD
+std::string CDatetimeUtils::extract_month(const std::string& date)
+{
+    return date.substr(0, sizeof("YYYY-MM")-1);
+}
+
+std::string CDatetimeUtils::extract_year(const std::string& date)
+{
+    return date.substr(0, sizeof("YYYY")-1);
+}
+
+std::string CDatetimeUtils::extract_standard_month(const std::string& date)
+{
+    return date.substr(0, sizeof("YYYY-MM")-1) + std::string("-01");
+}
+
+std::string CDatetimeUtils::extract_standard_year(const std::string& date)
+{
+    return date.substr(0, sizeof("YYYY")-1) + std::string("-01-01");
+}
+
 void CDatetimeUtils::get_current_datetime(char* datetime_buffer, size_t datetime_buffer_size, const char* format)
 {
     struct tm result;
@@ -282,6 +303,21 @@ void CDatetimeUtils::decompose(time_t t, std::string* year, std::string* month, 
     struct tm tm;
     localtime_r(&t, &tm);
     decompose(&tm, year, month, day, hour, minute, second);
+}
+
+bool CDatetimeUtils::decompose(const char* str, std::string* year, std::string* month, std::string* day, std::string* hour, std::string* minute, std::string* second)
+{
+    struct tm tm;
+    if (!CDatetimeUtils::datetime_struct_from_string(str, &tm))
+        return false;
+
+    decompose(tm, year, month, day, hour, minute, second);
+    return true;
+}
+
+bool CDatetimeUtils::decompose(const std::string& str, std::string* year, std::string* month, std::string* day, std::string* hour, std::string* minute, std::string* second)
+{
+    return decompose(str.c_str(), year, month, day, hour, minute, second);
 }
 
 // 要求t为YYYY-MM-DD hh:mm:ss格式
@@ -930,6 +966,36 @@ std::string get_formatted_current_datetime(bool with_milliseconds)
 #else
     return std::move(std::string(datetime_buffer));
 #endif
+}
+
+uint32_t date2day(const std::string& date)
+{
+    const std::string& datetime = date + std::string(" 00:00:00");
+    struct tm tm;
+    if (!CDatetimeUtils::datetime_struct_from_string(datetime.c_str(), &tm))
+        return 0;
+
+    return (tm.tm_year+1900)*10000 + (tm.tm_mon+1)*100 + tm.tm_mday;
+}
+
+uint32_t date2month(const std::string& date)
+{
+    const std::string& datetime = date + std::string(" 00:00:00");
+    struct tm tm;
+    if (!CDatetimeUtils::datetime_struct_from_string(datetime.c_str(), &tm))
+        return 0;
+
+    return (tm.tm_year+1900)*100 + (tm.tm_mon+1);
+}
+
+uint32_t date2year(const std::string& date)
+{
+    const std::string& datetime = date + std::string(" 00:00:00");
+    struct tm tm;
+    if (!CDatetimeUtils::datetime_struct_from_string(datetime.c_str(), &tm))
+        return 0;
+
+    return (tm.tm_year+1900);
 }
 
 SYS_NAMESPACE_END

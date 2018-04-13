@@ -77,6 +77,7 @@ CSafeLogger::CSafeLogger(const char* log_dir, const char* log_filename, uint16_t
     ,_bin_log_enabled(false)
     ,_trace_log_enabled(false)
     ,_raw_log_enabled(false)
+    ,_raw_record_time(false)
     ,_screen_enabled(false)
     ,_log_dir(log_dir)
     ,_log_filename(log_filename)
@@ -89,11 +90,15 @@ CSafeLogger::CSafeLogger(const char* log_dir, const char* log_filename, uint16_t
     // 保证日志行最大长度不小于指定值
     _log_line_size = (log_line_size < LOG_LINE_SIZE_MIN)? LOG_LINE_SIZE_MIN: log_line_size;
     if (_log_line_size > LOG_LINE_SIZE_MAX)
+    {
         _log_line_size = LOG_LINE_SIZE_MAX;
+    }
 
     // 出错时记录系统日志
     if (_sys_log_enabled)
+    {
         openlog("mooon-safe-logger", LOG_CONS|LOG_PID, 0);
+    }
 
     _log_fd = open(_log_filepath.c_str(), O_WRONLY|O_CREAT|O_APPEND, FILE_DEFAULT_PERM);
     if (-1 == _log_fd)
@@ -102,7 +107,7 @@ CSafeLogger::CSafeLogger(const char* log_dir, const char* log_filename, uint16_t
         if (_sys_log_enabled)
             syslog(LOG_ERR, "[%s:%d][%u][%" PRIu64"][%s] open failed: %s\n", __FILE__, __LINE__, getpid(), get_current_thread_id(), _log_filepath.c_str(), strerror(errcode));
 
-        THROW_SYSCALL_EXCEPTION(NULL, errcode, "open");
+        THROW_SYSCALL_EXCEPTION(_log_filepath, errcode, "open");
     }
 }
 
@@ -136,9 +141,10 @@ void CSafeLogger::enable_trace_log(bool enabled)
     _trace_log_enabled = enabled;
 }
 
-void CSafeLogger::enable_raw_log(bool enabled)
+void CSafeLogger::enable_raw_log(bool enabled, bool record_time)
 {
     _raw_log_enabled = enabled;
+    _raw_record_time = record_time;
 }
 
 void CSafeLogger::enable_auto_adddot(bool enabled)
@@ -403,13 +409,20 @@ bool CSafeLogger::need_rotate(int fd) const
 
 void CSafeLogger::do_log(log_level_t log_level, const char* filename, int lineno, const char* module_name, const char* format, va_list& args)
 {
-    int log_real_size;
+    int log_real_size = 0;
     utils::ScopedArray<char> log_line(new char[_log_line_size]);
 
     if (LOG_LEVEL_RAW == log_level)
     {
+        if (_raw_record_time)
+        {
+            char datetime[sizeof("[2012-12-12 12:12:12]")];
+            CDatetimeUtils::get_current_datetime(log_line.get(), sizeof(datetime), "[%04d-%02d-%02d %02d:%02d:%02d]");
+            log_real_size = sizeof("[YYYY-MM-DD hh:mm:ss]") - 1;
+        }
+
         // fix_vsnprintf()的返回值包含了结尾符在内的长度
-        log_real_size = utils::CStringUtils::fix_vsnprintf(log_line.get(), _log_line_size, format, args);
+        log_real_size += utils::CStringUtils::fix_vsnprintf(log_line.get()+log_real_size, _log_line_size-log_real_size, format, args);
         --log_real_size; // 结尾符不需要写入日志文件中
     }
     else
@@ -436,32 +449,28 @@ void CSafeLogger::do_log(log_level_t log_level, const char* filename, int lineno
         else
             n = utils::CStringUtils::fix_vsnprintf(log_line.get()+m-1, _log_line_size-m, format, args);
         log_real_size = m + n - 2;
-
-        // 是否自动添加结尾用的点号
-        if (_auto_adddot)
-        {
-            // 如果已有结尾的点，则不再添加，以免重复
-            if (log_line.get()[log_real_size-1] != '.')
-            {
-                log_line.get()[log_real_size] = '.';
-                ++log_real_size;
-            }
-        }
-
-        // 是否自动换行
-        if (_auto_newline)
-        {
-            // 如果已有一个换行符，则不再添加
-            if (log_line.get()[log_real_size-1] != '\n')
-            {
-                log_line.get()[log_real_size] = '\n';
-                ++log_real_size;
-            }
-        }
     }
 
-    // 允许打屏
-    if (_screen_enabled)
+    // 是否自动添加结尾用的点号
+    if (_auto_adddot)
+    {
+        // 如果已有结尾的点，则不再添加，以免重复
+        if (log_line.get()[log_real_size-1] != '.')
+        {
+            log_line.get()[log_real_size] = '.';
+            ++log_real_size;
+        }
+    }
+    if (_auto_newline) // 是否自动换行
+    {
+        // 如果已有一个换行符，则不再添加
+        if (log_line.get()[log_real_size-1] != '\n')
+        {
+            log_line.get()[log_real_size] = '\n';
+            ++log_real_size;
+        }
+    }
+    if (_screen_enabled) // 允许打屏
     {
         (void)write(STDOUT_FILENO, log_line.get(), log_real_size);
     }

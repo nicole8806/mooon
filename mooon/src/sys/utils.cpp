@@ -25,9 +25,11 @@
 #include <features.h> // feature_test_macros
 #include <ftw.h> // ftw
 #include <libgen.h> // dirname&basename
+#include <pwd.h> // getpwuid
 #include <sys/time.h>
 #include <sys/prctl.h> // prctl
 #include <sys/resource.h>
+#include <sys/types.h>
 #include <time.h>
 
 #ifndef PR_SET_NAME
@@ -73,20 +75,74 @@ int CUtils::get_last_error_code()
     return Error::code();
 }
 
-int CUtils::get_current_process_id()
+uint32_t CUtils::get_current_process_id()
 {
-    return getpid();
+    return static_cast<uint32_t>(getpid());
+}
+
+uint32_t CUtils::get_current_userid()
+{
+    return static_cast<uint32_t>(getuid());
+}
+
+std::string CUtils::get_current_username()
+{
+    char *buf;
+    struct passwd pwd;
+    struct passwd* result;
+    std::string username;
+
+    long bufsize = sysconf(_SC_GETPW_R_SIZE_MAX);
+    if (-1 == bufsize)
+    {
+        bufsize = 16384;        /* Should be more than enough */
+    }
+
+    buf = new char[bufsize];
+    const uint32_t uid = get_current_userid();
+    getpwuid_r(uid, &pwd, buf, bufsize-1, &result);
+    if (result != NULL)
+    {
+        username = pwd.pw_name;
+    }
+
+    delete []buf;
+    return username;
+}
+
+std::string CUtils::get_program_fullpath()
+{
+    const size_t bufsize = PATH_MAX;
+    char* buf = new char[bufsize];
+    const int retval = readlink("/proc/self/exe", buf, bufsize-1);
+    if (retval > 0)
+    {
+        buf[retval] = '\0';
+    }
+    else
+    {
+        *buf = '\0';
+    }
+
+    const std::string fullpath(buf);
+    delete []buf;
+    return fullpath;
 }
 
 std::string CUtils::get_program_path()
 {
-    char buf[1024];
+    return get_program_dirpath();
+}
 
-    buf[0] = '\0';
-    int retval = readlink("/proc/self/exe", buf, sizeof(buf)-1);
-    if (retval > 0)
+std::string CUtils::get_program_dirpath()
+{
+    const size_t bufsize = PATH_MAX;
+    char* buf = new char[bufsize];
+    const int n = readlink("/proc/self/exe", buf, bufsize-1);
+
+    if (n > 0)
     {
-        buf[retval] = '\0';
+        buf[n] = '\0';
 
 #if 0 // 保留这段废代码，以牢记deleted的存在，但由于这里只取路径部分，所以不关心它的存在
         if (!strcmp(buf+retval-10," (deleted)"))
@@ -101,18 +157,90 @@ std::string CUtils::get_program_path()
             *end = '\0';
 #endif
     }
+    else
+    {
+        buf[0] = '\0';
+    }
 
-    return buf;
+    const std::string dirpath = buf;
+    delete []buf;
+    return dirpath;
+}
+
+int CUtils::get_program_parameters(std::vector<std::string>* parameters, uint32_t pid)
+{
+    char* raw_full_cmdline_buf = new char[PATH_MAX];
+
+    std::string cmdline_filepath;
+    if (0 == pid)
+        cmdline_filepath = "/proc/self/cmdline";
+    else
+        cmdline_filepath = utils::CStringUtils::format_string("/proc/%u/cmdline", pid);
+
+    const int fd = open(cmdline_filepath.c_str(), O_RDONLY);
+    if (fd != -1)
+    {
+        const int n = read(fd, raw_full_cmdline_buf, PATH_MAX-1);
+        if (n != -1)
+        {
+            raw_full_cmdline_buf[n] = '\0';
+
+            std::string parameter;
+            for (int i=0; i<n; ++i)
+            {
+                if ('\0' == raw_full_cmdline_buf[i])
+                {
+                    parameters->push_back(parameter);
+                    parameter.clear();
+                }
+                else
+                {
+                    parameter.push_back(raw_full_cmdline_buf[i]);
+                }
+            }
+        }
+
+        close(fd);
+    }
+
+    delete []raw_full_cmdline_buf;
+    return static_cast<int>(parameters->size());
+}
+
+std::string CUtils::get_program_full_cmdline(char separator, uint32_t pid)
+{
+    std::string full_cmdline;
+    std::vector<std::string> parameters;
+
+    const int n = get_program_parameters(&parameters, pid);
+    for (int i=0; i<n; ++i)
+    {
+        if (full_cmdline.empty())
+        {
+            full_cmdline = parameters[i];
+        }
+        else
+        {
+            full_cmdline.push_back(separator);
+            full_cmdline.append(parameters[i]);
+        }
+    }
+
+    return full_cmdline;
 }
 
 std::string CUtils::get_filename(int fd)
 {
-	char path[PATH_MAX];
-	char filename[FILENAME_MAX] = {'\0'};
+	char* path_buf = new char[PATH_MAX];
+	char* filename_buf = new char[FILENAME_MAX];
+	*filename_buf = '\0';
 	
-	snprintf(path, sizeof(path), "/proc/%d/fd/%d", getpid(), fd);
-	if (-1 == readlink(path, filename, sizeof(filename))) filename[0] = '\0';
+	snprintf(path_buf, PATH_MAX-1, "/proc/%d/fd/%d", getpid(), fd);
+	if (-1 == readlink(path_buf, filename_buf, FILENAME_MAX-1)) filename_buf[0] = '\0';
     
+	const std::string filename = filename_buf;
+	delete []filename_buf;
+	delete []path_buf;
 	return filename;
 }
 
