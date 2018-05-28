@@ -242,9 +242,10 @@ private:
 
 class CArgumentContainer
 {
-    SINGLETON_DECLARE(CArgumentContainer)
+    SINGLETON_DECLARE(CArgumentContainer);
 
 public:
+    ~CArgumentContainer();
     void add_argument(CArgumentBase* argument);
     bool set_argument(const std::string& name, const std::string& value, std::string* errmsg);
     std::string usage_string() const;

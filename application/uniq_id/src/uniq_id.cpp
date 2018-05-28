@@ -60,14 +60,14 @@ CUniqId::CUniqId(const std::string& agent_nodes, uint32_t timeout_milliseconds, 
         uint16_t agent_port;
         if (!utils::CStringUtils::string2int(iter->second.c_str(), agent_port))
         {
-            THROW_EXCEPTION("invalid port parameter", ERROR_PARAMETER);
+            THROW_EXCEPTION("[UniqID] invalid port parameter", ERROR_PARAMETER);
         }
 
         struct sockaddr_in agent_addr;
         agent_addr.sin_addr.s_addr = inet_addr(iter->first.c_str());
         if (INADDR_NONE == agent_addr.sin_addr.s_addr)
         {
-            THROW_EXCEPTION("invalid IP parameter", ERROR_PARAMETER);
+            THROW_EXCEPTION("[UniqID] invalid IP parameter", ERROR_PARAMETER);
         }
 
         agent_addr.sin_family = AF_INET;
@@ -96,40 +96,65 @@ uint8_t CUniqId::get_label() throw (utils::CException, sys::CSyscallException)
 
     for (uint8_t retry=0; retry<_retry_times+1; ++retry)
     {
+        const struct sockaddr_in& agent_addr = pick_agent();
+
         try
         {
             struct sockaddr_in from_addr;
-            const struct sockaddr_in& agent_addr = pick_agent();
             int bytes = _udp_socket->send_to(&request, sizeof(request), agent_addr);
             if (bytes != sizeof(request))
-                THROW_SYSCALL_EXCEPTION("invalid size", bytes, "send_to");
+            {
+                THROW_SYSCALL_EXCEPTION(
+                        utils::CStringUtils::format_string("[UniqID][%s] invalid size", net::to_string(agent_addr).c_str()),
+                        bytes, "send_to");
+            }
 
             bytes = _udp_socket->timed_receive_from(&response, sizeof(response), &from_addr, _timeout_milliseconds);
             if (bytes != sizeof(response))
             {
-                THROW_SYSCALL_EXCEPTION("invalid size", bytes, "receive_from");
+                THROW_SYSCALL_EXCEPTION(
+                        utils::CStringUtils::format_string("[UniqID][%s] invalid size", net::to_string(from_addr).c_str()),
+                        bytes, "receive_from");
             }
             else if (RESPONSE_ERROR == response.type)
             {
-                THROW_EXCEPTION("store sequence block error", static_cast<int>(response.value1.to_int()));
+                THROW_EXCEPTION(
+                        utils::CStringUtils::format_string("[UniqID][%s] store sequence block error", net::to_string(from_addr).c_str()),
+                        static_cast<int>(response.value1.to_int()));
             }
             else if (response.type != RESPONSE_LABEL)
             {
-                THROW_EXCEPTION("error response label", response.type.to_int());
+                THROW_EXCEPTION(
+                        utils::CStringUtils::format_string("[UniqID][%s] error response label", net::to_string(from_addr).c_str()),
+                        response.type.to_int());
             }
             else if (response.echo.to_int() != echo)
             {
-                THROW_EXCEPTION("mismatch response label", ERROR_MISMATCH);
+                THROW_EXCEPTION(
+                        utils::CStringUtils::format_string("[UniqID][%s] mismatch response label", net::to_string(from_addr).c_str()),
+                        ERROR_MISMATCH);
             }
             else
             {
                 return static_cast<uint8_t>(response.value1.to_int());
             }
         }
+        catch (sys::CSyscallException& ex)
+        {
+            if ((retry > _retry_times) || (0 == _retry_times))
+            {
+                if (ex.errcode() != ETIMEDOUT)
+                    throw;
+
+                THROW_SYSCALL_EXCEPTION(
+                        utils::CStringUtils::format_string("[UniqID][%s] receive timeout", net::to_string(agent_addr).c_str()),
+                        ETIMEDOUT, "timed_receive_from");
+            }
+        }
         catch (utils::CException&)
         {
             // 在重试之前不抛出异常
-            if ((retry == _retry_times) || (0 == _retry_times))
+            if ((retry > _retry_times-1) || (0 == _retry_times))
                 throw;
         }
     }
@@ -151,39 +176,62 @@ uint32_t CUniqId::get_unqi_seq(uint16_t num) throw (utils::CException, sys::CSys
 
     for (uint8_t retry=0; retry<_retry_times+1; ++retry)
     {
+        const struct sockaddr_in& agent_addr = pick_agent();
+
         try
         {
             struct sockaddr_in from_addr;
-            const struct sockaddr_in& agent_addr = pick_agent();
             int bytes = _udp_socket->send_to(&request, sizeof(request), agent_addr);
             if (bytes != sizeof(request))
-                THROW_SYSCALL_EXCEPTION("invalid size", bytes, "send_to");
+                THROW_SYSCALL_EXCEPTION(
+                        utils::CStringUtils::format_string("[UniqID][%s] invalid size", net::to_string(agent_addr).c_str()),
+                        bytes, "send_to");
 
             bytes = _udp_socket->timed_receive_from(&response, sizeof(response), &from_addr, _timeout_milliseconds);
             if (bytes != sizeof(response))
             {
-                THROW_SYSCALL_EXCEPTION("invalid size", bytes, "receive_from");
+                THROW_SYSCALL_EXCEPTION(
+                        utils::CStringUtils::format_string("[UniqID][%s] invalid size", net::to_string(from_addr).c_str()),
+                        bytes, "receive_from");
             }
             else if (RESPONSE_ERROR == response.type)
             {
-                THROW_EXCEPTION("store sequence block error", static_cast<int>(response.value1.to_int()));
+                THROW_EXCEPTION(
+                        utils::CStringUtils::format_string("[UniqID][%s] store sequence block error", net::to_string(from_addr).c_str()),
+                        static_cast<int>(response.value1.to_int()));
             }
             else if (response.type != RESPONSE_UNIQ_SEQ)
             {
-                THROW_EXCEPTION("error response sequence", response.type.to_int());
+                THROW_EXCEPTION(
+                        utils::CStringUtils::format_string("[UniqID][%s] error response sequence", net::to_string(from_addr).c_str()),
+                        response.type.to_int());
             }
             else if (response.echo.to_int() != echo)
             {
-                THROW_EXCEPTION("mismatch response sequence", ERROR_MISMATCH);
+                THROW_EXCEPTION(
+                        utils::CStringUtils::format_string("[UniqID][%s] mismatch response sequence", net::to_string(from_addr).c_str()),
+                        ERROR_MISMATCH);
             }
             else
             {
                 return static_cast<uint32_t>(response.value1.to_int());
             }
         }
+        catch (sys::CSyscallException& ex)
+        {
+            if ((retry > _retry_times) || (0 == _retry_times))
+            {
+                if (ex.errcode() != ETIMEDOUT)
+                    throw;
+
+                THROW_SYSCALL_EXCEPTION(
+                        utils::CStringUtils::format_string("[UniqID][%s] receive timeout", net::to_string(agent_addr).c_str()),
+                        ETIMEDOUT, "timed_receive_from");
+            }
+        }
         catch (utils::CException&)
         {
-            if ((retry == _retry_times) || (0 == _retry_times))
+            if ((retry > _retry_times) || (0 == _retry_times))
                 throw;
         }
     }
@@ -205,39 +253,64 @@ uint64_t CUniqId::get_uniq_id(uint8_t user, uint64_t current_seconds) throw (uti
 
     for (uint8_t retry=0; retry<_retry_times+1; ++retry)
     {
+        const struct sockaddr_in& agent_addr = pick_agent();
+
         try
         {
             struct sockaddr_in from_addr;
-            const struct sockaddr_in& agent_addr = pick_agent();
             int bytes = _udp_socket->send_to(&request, sizeof(request), agent_addr);
             if (bytes != sizeof(request))
-                THROW_SYSCALL_EXCEPTION("invalid size", bytes, "send_to");
+            {
+                THROW_SYSCALL_EXCEPTION(
+                        utils::CStringUtils::format_string("[UniqID][%s] invalid size", net::to_string(agent_addr).c_str()),
+                        bytes, "send_to");
+            }
 
             bytes = _udp_socket->timed_receive_from(&response, sizeof(response), &from_addr, _timeout_milliseconds);
             if (bytes != sizeof(response))
             {
-                THROW_SYSCALL_EXCEPTION("invalid size", bytes, "receive_from");
+                THROW_SYSCALL_EXCEPTION(
+                        utils::CStringUtils::format_string("[UniqID][%s] invalid size", net::to_string(from_addr).c_str()),
+                        bytes, "receive_from");
             }
             else if (RESPONSE_ERROR == response.type)
             {
-                THROW_EXCEPTION("store sequence block error", static_cast<int>(response.value1.to_int()));
+                THROW_EXCEPTION(
+                        utils::CStringUtils::format_string("[UniqID][%s] store sequence block error", net::to_string(from_addr).c_str()),
+                        static_cast<int>(response.value1.to_int()));
             }
             else if (response.type != RESPONSE_UNIQ_ID)
             {
-                THROW_EXCEPTION("error response id", response.type.to_int());
+                THROW_EXCEPTION(
+                        utils::CStringUtils::format_string("[UniqID][%s] error response id", net::to_string(from_addr).c_str()),
+                        response.type.to_int());
             }
             else if (response.echo.to_int() != echo)
             {
-                THROW_EXCEPTION("mismatch response id", ERROR_MISMATCH);
+                THROW_EXCEPTION(
+                        utils::CStringUtils::format_string("[UniqID][%s] mismatch response id", net::to_string(from_addr).c_str()),
+                        ERROR_MISMATCH);
             }
             else
             {
                 return response.value3.to_int();
             }
         }
+        catch (sys::CSyscallException& ex)
+        {
+            if ((retry > _retry_times) || (0 == _retry_times))
+            {
+                if (ex.errcode() != ETIMEDOUT)
+                    throw;
+
+                THROW_SYSCALL_EXCEPTION(
+                        utils::CStringUtils::format_string("[UniqID][%s] receive timeout", net::to_string(agent_addr).c_str()),
+                        ETIMEDOUT, "timed_receive_from");
+            }
+        }
         catch (utils::CException&)
         {
-            if ((retry == _retry_times) || (0 == _retry_times))
+            if ((retry > _retry_times) || (0 == _retry_times))
                 throw;
         }
     }
@@ -306,30 +379,43 @@ void CUniqId::get_label_and_seq(uint8_t* label, uint32_t* seq, uint16_t num) thr
 
     for (uint8_t retry=0; retry<_retry_times+1; ++retry)
     {
+        const struct sockaddr_in& agent_addr = pick_agent();
+
         try
         {
             struct sockaddr_in from_addr;
-            const struct sockaddr_in& agent_addr = pick_agent();
             int bytes = _udp_socket->send_to(&request, sizeof(request), agent_addr);
             if (bytes != sizeof(request))
-                THROW_SYSCALL_EXCEPTION("invalid size", bytes, "send_to");
+            {
+                THROW_SYSCALL_EXCEPTION(
+                        utils::CStringUtils::format_string("[UniqID][%s] invalid size", net::to_string(agent_addr).c_str()),
+                        bytes, "send_to");
+            }
 
             bytes = _udp_socket->timed_receive_from(&response, sizeof(response), &from_addr, _timeout_milliseconds);
             if (bytes != sizeof(response))
             {
-                THROW_SYSCALL_EXCEPTION("invalid size", bytes, "receive_from");
+                THROW_SYSCALL_EXCEPTION(
+                        utils::CStringUtils::format_string("[UniqID][%s] invalid size", net::to_string(from_addr).c_str()),
+                        bytes, "receive_from");
             }
             else if (RESPONSE_ERROR == response.type)
             {
-                THROW_EXCEPTION("store sequence block error", static_cast<int>(response.value1.to_int()));
+                THROW_EXCEPTION(
+                        utils::CStringUtils::format_string("[UniqID][%s] store sequence block error", net::to_string(from_addr).c_str()),
+                        static_cast<int>(response.value1.to_int()));
             }
             else if (response.type != RESPONSE_LABEL_AND_SEQ)
             {
-                THROW_EXCEPTION("error response label and sequence", response.type.to_int());
+                THROW_EXCEPTION(
+                        utils::CStringUtils::format_string("[UniqID][%s] error response label and sequence", net::to_string(from_addr).c_str()),
+                        response.type.to_int());
             }
             else if (response.echo.to_int() != echo)
             {
-                THROW_EXCEPTION("mismatch response label and sequence", ERROR_MISMATCH);
+                THROW_EXCEPTION(
+                        utils::CStringUtils::format_string("[UniqID][%s] mismatch response label and sequence", net::to_string(from_addr).c_str()),
+                        ERROR_MISMATCH);
             }
             else
             {
@@ -338,9 +424,21 @@ void CUniqId::get_label_and_seq(uint8_t* label, uint32_t* seq, uint16_t num) thr
                 break;
             }
         }
+        catch (sys::CSyscallException& ex)
+        {
+            if ((retry > _retry_times) || (0 == _retry_times))
+            {
+                if (ex.errcode() != ETIMEDOUT)
+                    throw;
+
+                THROW_SYSCALL_EXCEPTION(
+                        utils::CStringUtils::format_string("[UniqID][%s] receive timeout", net::to_string(agent_addr).c_str()),
+                        ETIMEDOUT, "timed_receive_from");
+            }
+        }
         catch (utils::CException&)
         {
-            if ((retry == _retry_times) || (0 == _retry_times))
+            if ((retry > _retry_times) || (0 == _retry_times))
                 throw;
         }
     }
@@ -410,7 +508,7 @@ void CUniqId::get_transaction_id(uint16_t num, std::vector<std::string>* id_vec,
                 if ('\0' == *format_p)
                 {
                     // format error
-                    THROW_EXCEPTION("invalid `format` parameter", ERROR_PARAMETER);
+                    THROW_EXCEPTION("[UniqID] invalid `format` parameter", ERROR_PARAMETER);
                 }
                 else
                 {
@@ -436,7 +534,7 @@ void CUniqId::get_transaction_id(uint16_t num, std::vector<std::string>* id_vec,
                         else
                         {
                             // format error
-                            THROW_EXCEPTION("invalid `format` parameter", ERROR_PARAMETER);
+                            THROW_EXCEPTION("[UniqID] invalid `format` parameter", ERROR_PARAMETER);
                         }
 
                         ++format_p;
@@ -480,7 +578,7 @@ void CUniqId::get_transaction_id(uint16_t num, std::vector<std::string>* id_vec,
                             break;
                         default:
                             // format error
-                            THROW_EXCEPTION("invalid `format` parameter", ERROR_PARAMETER);
+                            THROW_EXCEPTION("[UniqID] invalid `format` parameter", ERROR_PARAMETER);
                             break;
                         } // switch
 
